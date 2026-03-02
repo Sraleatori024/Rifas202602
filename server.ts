@@ -74,6 +74,18 @@ async function startServer() {
         });
       }
 
+      // Update raffle stats
+      const raffleSnap = await raffleRef.get();
+      const raffleData = raffleSnap.data();
+      const price = raffleData.price || 0;
+      const totalRevenue = numbers.length * price;
+
+      batch.update(raffleRef, {
+        sold_count: FieldValue.increment(numbers.length),
+        revenue: FieldValue.increment(totalRevenue),
+        updated_at: FieldValue.serverTimestamp()
+      });
+
       await batch.commit();
       res.json({ success: true, message: "Pagamento confirmado e números reservados!" });
     } catch (error: any) {

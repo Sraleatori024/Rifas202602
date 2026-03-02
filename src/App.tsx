@@ -21,7 +21,9 @@ import {
   User as UserIcon,
   CreditCard,
   Dice5,
-  MousePointer2
+  MousePointer2,
+  Unlock,
+  Trash2
 } from 'lucide-react';
 import { cn, User, Raffle, RaffleNumber, DrawResult } from './types';
 import { auth, db } from './firebase';
@@ -44,7 +46,8 @@ import {
   setDoc,
   limit,
   writeBatch,
-  onSnapshot
+  onSnapshot,
+  deleteDoc
 } from 'firebase/firestore';
 
 // --- Components ---
@@ -682,6 +685,8 @@ const AdminDashboard = () => {
     profit_percent: 30,
     progress_percent: 0,
     min_purchase_quantity: 1,
+    min_revenue_goal: 0,
+    min_sales_percent: 0,
     promotion: {
       active: false,
       package_quantity: 1,
@@ -716,6 +721,8 @@ const AdminDashboard = () => {
       profit_percent: raffle.profit_percent,
       progress_percent: raffle.progress_percent || 0,
       min_purchase_quantity: raffle.min_purchase_quantity || 1,
+      min_revenue_goal: raffle.min_revenue_goal || 0,
+      min_sales_percent: raffle.min_sales_percent || 0,
       promotion: raffle.promotion || {
         active: false,
         package_quantity: 1,
@@ -727,6 +734,66 @@ const AdminDashboard = () => {
       }
     });
     setShowCreate(true);
+  };
+
+  const handleDelete = async (raffle: Raffle) => {
+    const hasSales = (raffle.sold_count || 0) > 0;
+    const confirmMsg = hasSales 
+      ? "ATENÇÃO: Existem números vendidos. Excluir pode gerar necessidade de reembolso. Essa ação é irreversível. Deseja realmente excluir esta rifa?"
+      : "Essa ação é irreversível. Deseja realmente excluir esta rifa?";
+    
+    if (window.confirm(confirmMsg)) {
+      if (hasSales && !window.confirm("CONFIRMAÇÃO DUPLA: Você tem certeza absoluta que deseja excluir uma rifa com vendas ativas?")) {
+        return;
+      }
+      
+      try {
+        await deleteDoc(doc(db, "raffles", raffle.id));
+        // Note: In a real app, you'd also delete the subcollection 'numbers'
+        // but Firestore doesn't support recursive delete from client SDK easily.
+        // For this demo, deleting the main doc is enough to hide it.
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao excluir rifa.");
+      }
+    }
+  };
+
+  const handleToggleManualRelease = async (raffle: Raffle) => {
+    if (window.confirm("Tem certeza que deseja liberar o sorteio antes de atingir a meta?")) {
+      try {
+        await updateDoc(doc(db, "raffles", raffle.id), {
+          draw_manually_released: true,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao liberar sorteio.");
+      }
+    }
+  };
+
+  const isGoalMet = (raffle: Raffle) => {
+    if (raffle.draw_manually_released) return true;
+    
+    const revenue = raffle.revenue || 0;
+    const soldCount = raffle.sold_count || 0;
+    const totalNumbers = raffle.total_numbers || 1;
+    const salesPercent = (soldCount / totalNumbers) * 100;
+    
+    const revenueGoalMet = raffle.min_revenue_goal ? revenue >= raffle.min_revenue_goal : true;
+    const salesGoalMet = raffle.min_sales_percent ? salesPercent >= raffle.min_sales_percent : true;
+    
+    return revenueGoalMet && salesGoalMet;
+  };
+
+  const handleDraw = (raffle: Raffle) => {
+    if (!isGoalMet(raffle)) {
+      alert("Meta mínima ainda não atingida. Sorteio bloqueado.");
+      return;
+    }
+    alert(`Iniciando sorteio para: ${raffle.name}`);
+    // Implement draw logic here
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -778,6 +845,8 @@ const AdminDashboard = () => {
         profit_percent: 30,
         progress_percent: 0,
         min_purchase_quantity: 1,
+        min_revenue_goal: 0,
+        min_sales_percent: 0,
         promotion: {
           active: false,
           package_quantity: 1,
@@ -872,8 +941,21 @@ const AdminDashboard = () => {
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex gap-2">
-                    <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors"><Settings className="w-4 h-4" /></button>
-                    <button className="p-2 text-slate-400 hover:text-secondary transition-colors"><Trophy className="w-4 h-4" /></button>
+                    <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Editar"><Settings className="w-4 h-4" /></button>
+                    <button 
+                      onClick={() => handleDraw(raffle)} 
+                      className={cn(
+                        "p-2 transition-colors",
+                        isGoalMet(raffle) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
+                      )}
+                      title={isGoalMet(raffle) ? "Sortear" : "Meta não atingida"}
+                    >
+                      <Trophy className="w-4 h-4" />
+                    </button>
+                    {!isGoalMet(raffle) && (
+                      <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
+                    )}
+                    <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </td>
               </tr>
@@ -976,6 +1058,28 @@ const AdminDashboard = () => {
                       value={newRaffle.min_purchase_quantity}
                       onChange={e => setNewRaffle({...newRaffle, min_purchase_quantity: parseInt(e.target.value)})}
                       className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Meta de Arrecadação (R$)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={newRaffle.min_revenue_goal}
+                      onChange={e => setNewRaffle({...newRaffle, min_revenue_goal: parseFloat(e.target.value)})}
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Meta de Vendas (%)</label>
+                    <input 
+                      type="number" 
+                      min="0" max="100"
+                      value={newRaffle.min_sales_percent}
+                      onChange={e => setNewRaffle({...newRaffle, min_sales_percent: parseInt(e.target.value)})}
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="0"
                     />
                   </div>
 
