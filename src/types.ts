@@ -22,6 +22,7 @@ export interface Raffle {
   active: number;
   created_at: string;
   progress_percent?: number;
+  min_purchase_quantity?: number;
   promotion?: {
     active: boolean;
     package_quantity: number;

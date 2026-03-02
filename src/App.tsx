@@ -317,14 +317,19 @@ const RaffleDetails = () => {
     if (selectedNumbers.includes(num)) {
       setSelectedNumbers(selectedNumbers.filter(n => n !== num));
     } else {
-      setSelectedNumbers([...selectedNumbers, num]);
+      setSelectedNumbers(prev => [...prev, num]);
     }
   };
 
   const selectRandom = (count: number) => {
-    const available = numbers.filter(n => n.status === 'available').map(n => n.number);
+    const available = numbers
+      .filter(n => n.status === 'available' && !selectedNumbers.includes(n.number))
+      .map(n => n.number);
+    
     const shuffled = available.sort(() => 0.5 - Math.random());
-    setSelectedNumbers(shuffled.slice(0, count));
+    const newSelection = shuffled.slice(0, count);
+    
+    setSelectedNumbers(prev => [...prev, ...newSelection]);
   };
 
   const handlePurchase = async () => {
@@ -547,13 +552,21 @@ const RaffleDetails = () => {
             </div>
 
             {step === 1 && (
-              <button 
-                disabled={selectedNumbers.length === 0}
-                onClick={() => setStep(2)}
-                className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Continuar
-              </button>
+              <div className="space-y-4">
+                {selectedNumbers.length > 0 && selectedNumbers.length < (raffle.min_purchase_quantity || 1) && (
+                  <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100">
+                    <AlertCircle className="w-4 h-4" />
+                    A compra mínima para esta rifa é de {raffle.min_purchase_quantity} números.
+                  </div>
+                )}
+                <button 
+                  disabled={selectedNumbers.length < (raffle.min_purchase_quantity || 1)}
+                  onClick={() => setStep(2)}
+                  className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Continuar
+                </button>
+              </div>
             )}
 
             {step === 2 && (
@@ -668,6 +681,7 @@ const AdminDashboard = () => {
     image_url: '',
     profit_percent: 30,
     progress_percent: 0,
+    min_purchase_quantity: 1,
     promotion: {
       active: false,
       package_quantity: 1,
@@ -701,6 +715,7 @@ const AdminDashboard = () => {
       image_url: raffle.image_url,
       profit_percent: raffle.profit_percent,
       progress_percent: raffle.progress_percent || 0,
+      min_purchase_quantity: raffle.min_purchase_quantity || 1,
       promotion: raffle.promotion || {
         active: false,
         package_quantity: 1,
@@ -762,6 +777,7 @@ const AdminDashboard = () => {
         image_url: '',
         profit_percent: 30,
         progress_percent: 0,
+        min_purchase_quantity: 1,
         promotion: {
           active: false,
           package_quantity: 1,
@@ -949,6 +965,17 @@ const AdminDashboard = () => {
                       onChange={e => setNewRaffle({...newRaffle, image_url: e.target.value})}
                       className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                       placeholder="https://..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Compra Mínima (Números)</label>
+                    <input 
+                      type="number" 
+                      min="1"
+                      required
+                      value={newRaffle.min_purchase_quantity}
+                      onChange={e => setNewRaffle({...newRaffle, min_purchase_quantity: parseInt(e.target.value)})}
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                     />
                   </div>
 
