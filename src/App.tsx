@@ -47,23 +47,6 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 
-// --- Helpers ---
-const isPromotionActive = (raffle: Raffle) => {
-  if (!raffle.promotion || !raffle.promotion.active) return false;
-  const now = new Date();
-  const start = new Date(raffle.promotion.start_date);
-  const end = new Date(raffle.promotion.end_date);
-  return now >= start && now <= end;
-};
-
-const getEffectivePrice = (raffle: Raffle) => {
-  if (isPromotionActive(raffle)) {
-    const discount = raffle.price * (raffle.promotion!.discount_percent / 100);
-    return raffle.price - discount;
-  }
-  return raffle.price;
-};
-
 // --- Components ---
 
 const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void }) => {
@@ -215,22 +198,8 @@ const Home = () => {
                 alt={raffle.name}
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
               />
-              <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
-                {isPromotionActive(raffle) && (
-                  <div className="bg-red-600 text-white px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-lg animate-pulse">
-                    {raffle.promotion?.label || 'Promoção'}
-                  </div>
-                )}
-                <div className="bg-secondary text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
-                  {isPromotionActive(raffle) ? (
-                    <div className="flex flex-col items-end leading-tight">
-                      <span className="text-[10px] line-through opacity-70">R$ {raffle.price.toFixed(2)}</span>
-                      <span>R$ {getEffectivePrice(raffle).toFixed(2)}</span>
-                    </div>
-                  ) : (
-                    `R$ ${raffle.price.toFixed(2)}`
-                  )}
-                </div>
+              <div className="absolute top-4 right-4 bg-secondary text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
+                R$ {raffle.price.toFixed(2)}
               </div>
             </div>
             <div className="p-6">
@@ -240,13 +209,10 @@ const Home = () => {
               <div className="space-y-4">
                 <div className="flex justify-between text-sm font-medium">
                   <span className="text-slate-500">Progresso</span>
-                  <span className="text-primary">{raffle.progress_percent || 0}%</span>
+                  <span className="text-primary">0%</span>
                 </div>
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div 
-                    className="bg-primary h-full rounded-full transition-all duration-1000" 
-                    style={{ width: `${raffle.progress_percent || 0}%` }}
-                  ></div>
+                  <div className="bg-primary h-full rounded-full" style={{ width: '0%' }}></div>
                 </div>
                 
                 <Link 
@@ -350,22 +316,15 @@ const RaffleDetails = () => {
 
   if (loading || !raffle) return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div>;
 
-  const progress = raffle.progress_percent || 0;
+  const progress = (stats.sold / stats.total) * 100;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Info */}
         <div className="lg:col-span-2 space-y-8">
-          <div className="card overflow-hidden">
-            <div className="relative">
-              <img src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} className="w-full h-64 object-cover" />
-              {isPromotionActive(raffle) && (
-                <div className="absolute top-4 left-4 bg-red-600 text-white px-4 py-2 rounded-full text-sm font-black uppercase tracking-widest shadow-2xl animate-bounce">
-                  {raffle.promotion?.label || 'Promoção Ativa'}
-                </div>
-              )}
-            </div>
+          <div className="card">
+            <img src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} className="w-full h-64 object-cover" />
             <div className="p-6">
               <h1 className="text-3xl font-bold text-slate-900 mb-2">{raffle.name}</h1>
               <p className="text-slate-600 mb-6">{raffle.description}</p>
@@ -373,12 +332,7 @@ const RaffleDetails = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                   <span className="text-xs text-slate-500 uppercase font-bold tracking-wider">Valor por número</span>
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-2xl font-bold text-primary">R$ {getEffectivePrice(raffle).toFixed(2)}</p>
-                    {isPromotionActive(raffle) && (
-                      <span className="text-sm text-slate-400 line-through">R$ {raffle.price.toFixed(2)}</span>
-                    )}
-                  </div>
+                  <p className="text-2xl font-bold text-primary">R$ {raffle.price.toFixed(2)}</p>
                 </div>
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                   <span className="text-xs text-slate-500 uppercase font-bold tracking-wider">Encerramento</span>
@@ -392,12 +346,12 @@ const RaffleDetails = () => {
           <div className="card p-6">
             <div className="flex justify-between items-end mb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Progresso da Rifa</h3>
-                <p className="text-sm text-slate-500">Acompanhe o andamento das vendas</p>
+                <h3 className="text-lg font-bold text-slate-900">Progresso de Vendas</h3>
+                <p className="text-sm text-slate-500">Acompanhe o sucesso desta rifa</p>
               </div>
               <div className="text-right">
-                <span className="text-2xl font-black text-primary">{progress}%</span>
-                <p className="text-xs text-slate-400 uppercase font-bold">Concluído</p>
+                <span className="text-2xl font-black text-primary">{progress.toFixed(1)}%</span>
+                <p className="text-xs text-slate-400 uppercase font-bold">Vendido</p>
               </div>
             </div>
             <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden mb-4">
@@ -407,9 +361,19 @@ const RaffleDetails = () => {
                 className="bg-gradient-to-r from-primary to-blue-400 h-full rounded-full"
               />
             </div>
-            <div className="text-center p-2 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-xs text-slate-400 font-bold uppercase">Total de Cotas</p>
-              <p className="font-bold text-slate-700">{stats.total} números</p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="p-2">
+                <p className="text-xs text-slate-400 font-bold uppercase">Total</p>
+                <p className="font-bold text-slate-700">{stats.total}</p>
+              </div>
+              <div className="p-2">
+                <p className="text-xs text-slate-400 font-bold uppercase">Vendidos</p>
+                <p className="font-bold text-secondary">{stats.sold}</p>
+              </div>
+              <div className="p-2">
+                <p className="text-xs text-slate-400 font-bold uppercase">Disponíveis</p>
+                <p className="font-bold text-primary">{stats.available}</p>
+              </div>
             </div>
           </div>
 
@@ -735,7 +699,7 @@ const AdminDashboard = () => {
           </div>
           <div>
             <p className="text-sm text-slate-500 font-bold uppercase">Arrecadação Total</p>
-            <p className="text-2xl font-black text-slate-900">R$ 1.250,00</p>
+            <p className="text-2xl font-black text-slate-900">R$ 0,00</p>
           </div>
         </div>
         <div className="card p-6 flex items-center gap-4">
@@ -744,7 +708,7 @@ const AdminDashboard = () => {
           </div>
           <div>
             <p className="text-sm text-slate-500 font-bold uppercase">Clientes Ativos</p>
-            <p className="text-2xl font-black text-slate-900">42</p>
+            <p className="text-2xl font-black text-slate-900">0</p>
           </div>
         </div>
       </div>
