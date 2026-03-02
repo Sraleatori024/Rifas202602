@@ -11,7 +11,7 @@ export interface User {
 }
 
 export interface Raffle {
-  id: number;
+  id: string;
   name: string;
   description: string;
   price: number;
@@ -21,6 +21,14 @@ export interface Raffle {
   profit_percent: number;
   active: number;
   created_at: string;
+  progress_percent?: number;
+  promotion?: {
+    active: boolean;
+    discount_percent: number;
+    start_date: string;
+    end_date: string;
+    label: string;
+  };
 }
 
 export interface RaffleNumber {

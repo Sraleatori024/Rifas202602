@@ -2,14 +2,15 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
-import * as admin from "firebase-admin";
+import { initializeApp, getApps } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 dotenv.config();
 
 // Initialize Firebase Admin
 try {
-  if (!admin.apps.length) {
-    admin.initializeApp({
+  if (!getApps().length) {
+    initializeApp({
       projectId: "rifas-2026-c4026",
     });
     console.log("Firebase Admin initialized successfully");
@@ -18,11 +19,11 @@ try {
   console.error("Firebase Admin initialization error:", error);
 }
 
-let db: admin.firestore.Firestore;
+let db: any;
 
 async function startServer() {
   try {
-    db = admin.firestore();
+    db = getFirestore();
   } catch (e) {
     console.error("Failed to initialize Firestore:", e);
   }
@@ -69,7 +70,7 @@ async function startServer() {
           buyer_name: buyer.name,
           buyer_whatsapp: buyer.whatsapp,
           buyer_instagram: buyer.instagram || null,
-          updated_at: admin.firestore.FieldValue.serverTimestamp()
+          updated_at: FieldValue.serverTimestamp()
         });
       }
 

@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Google AI Studio App</title>
+    <script>
+      // Prevent some libraries from crashing when they try to overwrite window.fetch
+      // This is a common issue in some sandboxed environments.
+      (function() {
+        try {
+          const originalFetch = window.fetch;
+          if (originalFetch) {
+            Object.defineProperty(window, 'fetch', {
+              get: () => originalFetch,
+              set: (v) => { console.warn('Attempted to overwrite fetch, ignoring.'); },
+              configurable: true
+            });
+          }
+        } catch (e) {
+          // Ignore errors during property definition
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
