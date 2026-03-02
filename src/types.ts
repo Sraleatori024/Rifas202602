@@ -24,7 +24,9 @@ export interface Raffle {
   progress_percent?: number;
   promotion?: {
     active: boolean;
-    discount_percent: number;
+    package_quantity: number;
+    package_price: number;
+    original_price: number;
     start_date: string;
     end_date: string;
     label: string;

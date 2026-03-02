@@ -4,6 +4,12 @@
   --color-primary: #1E3A8A;
   --color-secondary: #10B981;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --animate-shimmer: shimmer 3s linear infinite;
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
 }
 
 @layer base {

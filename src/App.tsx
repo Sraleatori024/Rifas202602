@@ -184,48 +184,86 @@ const Home = () => {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {raffles.map((raffle, index) => (
-          <motion.div
-            key={raffle.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="card group"
-          >
-            <div className="relative h-64 overflow-hidden">
-              <img 
-                src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} 
-                alt={raffle.name}
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-              />
-              <div className="absolute top-4 right-4 bg-secondary text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
-                R$ {raffle.price.toFixed(2)}
+        {raffles.map((raffle, index) => {
+          const isPromoActive = raffle.promotion?.active && 
+            new Date() >= new Date(raffle.promotion.start_date) && 
+            new Date() <= new Date(raffle.promotion.end_date);
+          
+          const progress = raffle.progress_percent || 0;
+
+          return (
+            <motion.div
+              key={raffle.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className="card group"
+            >
+              <div className="relative h-64 overflow-hidden">
+                <img 
+                  src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} 
+                  alt={raffle.name}
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                />
+                {isPromoActive && (
+                  <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-black animate-pulse shadow-lg flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3" />
+                    {raffle.promotion?.label || '🔥 MEGA PROMOÇÃO'}
+                  </div>
+                )}
+                {raffle.active === 0 && (
+                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center">
+                    <span className="bg-white text-slate-900 px-6 py-2 rounded-full font-black uppercase tracking-widest shadow-2xl transform -rotate-12">
+                      Esgotado
+                    </span>
+                  </div>
+                )}
+                <div className="absolute top-4 right-4 bg-secondary text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
+                  {isPromoActive ? (
+                    <div className="flex flex-col items-end leading-tight">
+                      <span className="text-[10px] line-through opacity-70">R$ {raffle.price.toFixed(2)}</span>
+                      <span>R$ {raffle.promotion?.package_price.toFixed(2)}</span>
+                    </div>
+                  ) : (
+                    `R$ ${raffle.price.toFixed(2)}`
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="p-6">
-              <h3 className="text-xl font-bold text-slate-900 mb-2">{raffle.name}</h3>
-              <p className="text-slate-600 text-sm mb-6 line-clamp-2">{raffle.description}</p>
-              
-              <div className="space-y-4">
-                <div className="flex justify-between text-sm font-medium">
-                  <span className="text-slate-500">Progresso</span>
-                  <span className="text-primary">0%</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{ width: '0%' }}></div>
-                </div>
+              <div className="p-6">
+                <h3 className="text-xl font-bold text-slate-900 mb-2">{raffle.name}</h3>
+                <p className="text-slate-600 text-sm mb-6 line-clamp-2">{raffle.description}</p>
                 
-                <Link 
-                  to={`/raffle/${raffle.id}`}
-                  className="w-full btn-primary flex items-center justify-center space-x-2"
-                >
-                  <span>Participar Agora</span>
-                  <ChevronRight className="w-4 h-4" />
-                </Link>
+                <div className="space-y-4">
+                  <div className="flex justify-between text-sm font-medium">
+                    <span className="text-slate-500">Progresso</span>
+                    <span className="text-primary font-bold">{progress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${progress}%` }}
+                      className="bg-gradient-to-r from-primary to-blue-400 h-full rounded-full"
+                    />
+                  </div>
+                  
+                  {isPromoActive && (
+                    <p className="text-[10px] text-red-600 font-bold animate-bounce text-center uppercase tracking-wider">
+                      Aproveite antes que acabe!
+                    </p>
+                  )}
+
+                  <Link 
+                    to={`/raffle/${raffle.id}`}
+                    className="w-full btn-primary flex items-center justify-center space-x-2"
+                  >
+                    <span>Participar Agora</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </Link>
+                </div>
               </div>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );
@@ -316,7 +354,12 @@ const RaffleDetails = () => {
 
   if (loading || !raffle) return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div>;
 
-  const progress = (stats.sold / stats.total) * 100;
+  const isPromoActive = raffle.promotion?.active && 
+    new Date() >= new Date(raffle.promotion.start_date) && 
+    new Date() <= new Date(raffle.promotion.end_date);
+  
+  const progress = raffle.progress_percent || 0;
+  const isSoldOut = stats.available === 0;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -324,91 +367,104 @@ const RaffleDetails = () => {
         {/* Left Column: Info */}
         <div className="lg:col-span-2 space-y-8">
           <div className="card">
-            <img src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} className="w-full h-64 object-cover" />
+            <img src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} className="w-full h-72 object-cover" />
             <div className="p-6">
-              <h1 className="text-3xl font-bold text-slate-900 mb-2">{raffle.name}</h1>
+              <div className="flex justify-between items-start mb-4">
+                <h1 className="text-3xl font-bold text-slate-900">{raffle.name}</h1>
+                {isPromoActive && (
+                  <div className="bg-red-600 text-white px-4 py-1 rounded-full text-xs font-black animate-pulse shadow-lg flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    {raffle.promotion?.label || '🔥 MEGA PROMOÇÃO'}
+                  </div>
+                )}
+              </div>
               <p className="text-slate-600 mb-6">{raffle.description}</p>
               
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <span className="text-xs text-slate-500 uppercase font-bold tracking-wider">Valor por número</span>
-                  <p className="text-2xl font-bold text-primary">R$ {raffle.price.toFixed(2)}</p>
-                </div>
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <span className="text-xs text-slate-500 uppercase font-bold tracking-wider">Encerramento</span>
-                  <p className="text-lg font-semibold text-slate-700">{new Date(raffle.end_date).toLocaleDateString()}</p>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 flex justify-between items-center">
+                  <div>
+                    <span className="text-xs text-slate-500 uppercase font-bold tracking-wider">Valor por número</span>
+                    <div className="flex items-center gap-3">
+                      {isPromoActive ? (
+                        <>
+                          <span className="text-lg line-through text-slate-400">R$ {raffle.price.toFixed(2)}</span>
+                          <p className="text-3xl font-black text-primary">R$ {raffle.promotion?.package_price.toFixed(2)}</p>
+                        </>
+                      ) : (
+                        <p className="text-3xl font-black text-primary">R$ {raffle.price.toFixed(2)}</p>
+                      )}
+                    </div>
+                  </div>
+                  {isPromoActive && (
+                    <div className="text-right">
+                      <span className="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-full font-bold uppercase tracking-tighter">Pacote {raffle.promotion?.package_quantity}x</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Progress Bar */}
-          <div className="card p-6">
+          {/* Progress Bar (Fake) */}
+          <div className="card p-6 bg-gradient-to-br from-white to-slate-50">
             <div className="flex justify-between items-end mb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Progresso de Vendas</h3>
-                <p className="text-sm text-slate-500">Acompanhe o sucesso desta rifa</p>
+                <h3 className="text-lg font-bold text-slate-900">Status da Rifa</h3>
+                <p className="text-sm text-slate-500 italic">Aproveite antes que acabe!</p>
               </div>
               <div className="text-right">
-                <span className="text-2xl font-black text-primary">{progress.toFixed(1)}%</span>
-                <p className="text-xs text-slate-400 uppercase font-bold">Vendido</p>
+                <span className="text-3xl font-black text-primary">{progress}%</span>
               </div>
             </div>
-            <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden mb-4">
+            <div className="w-full bg-slate-200 h-6 rounded-full overflow-hidden mb-2 shadow-inner p-1">
               <motion.div 
                 initial={{ width: 0 }}
                 animate={{ width: `${progress}%` }}
-                className="bg-gradient-to-r from-primary to-blue-400 h-full rounded-full"
+                className="bg-gradient-to-r from-primary via-blue-500 to-primary bg-[length:200%_100%] animate-shimmer h-full rounded-full shadow-lg"
               />
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="p-2">
-                <p className="text-xs text-slate-400 font-bold uppercase">Total</p>
-                <p className="font-bold text-slate-700">{stats.total}</p>
-              </div>
-              <div className="p-2">
-                <p className="text-xs text-slate-400 font-bold uppercase">Vendidos</p>
-                <p className="font-bold text-secondary">{stats.sold}</p>
-              </div>
-              <div className="p-2">
-                <p className="text-xs text-slate-400 font-bold uppercase">Disponíveis</p>
-                <p className="font-bold text-primary">{stats.available}</p>
-              </div>
             </div>
           </div>
 
           {/* Number Selection */}
-          {step === 1 && (
-            <div className="card p-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                  <Dice5 className="text-primary" />
-                  Escolha seus números
-                </h3>
-                <div className="flex gap-2">
-                  <button onClick={() => selectRandom(5)} className="px-3 py-1 text-xs font-bold border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">+5 Aleatórios</button>
-                  <button onClick={() => selectRandom(10)} className="px-3 py-1 text-xs font-bold border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">+10 Aleatórios</button>
+          {isSoldOut ? (
+            <div className="card p-12 text-center bg-slate-50 border-2 border-dashed border-slate-200">
+              <X className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+              <h3 className="text-2xl font-black text-slate-400 uppercase tracking-widest">Esgotado</h3>
+              <p className="text-slate-500">Infelizmente todos os números já foram reservados.</p>
+            </div>
+          ) : (
+            step === 1 && (
+              <div className="card p-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                  <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                    <Dice5 className="text-primary" />
+                    Escolha seus números
+                  </h3>
+                  <div className="flex gap-2">
+                    <button onClick={() => selectRandom(5)} className="px-3 py-1 text-xs font-bold border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">+5 Aleatórios</button>
+                    <button onClick={() => selectRandom(10)} className="px-3 py-1 text-xs font-bold border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">+10 Aleatórios</button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
+                  {numbers.map(n => (
+                    <button
+                      key={n.id}
+                      disabled={n.status !== 'available'}
+                      onClick={() => toggleNumber(n.number)}
+                      className={cn(
+                        "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
+                        n.status === 'sold' ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
+                        selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
+                        "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
+                      )}
+                    >
+                      {n.number.toString().padStart(2, '0')}
+                    </button>
+                  ))}
                 </div>
               </div>
-
-              <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
-                {numbers.map(n => (
-                  <button
-                    key={n.id}
-                    disabled={n.status !== 'available'}
-                    onClick={() => toggleNumber(n.number)}
-                    className={cn(
-                      "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                      n.status === 'sold' ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
-                      selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
-                      "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
-                    )}
-                  >
-                    {n.number.toString().padStart(2, '0')}
-                  </button>
-                ))}
-              </div>
-            </div>
+            )
           )}
 
           {step === 2 && (
@@ -602,6 +658,7 @@ const AdminLogin = ({ onLogin }: { onLogin: (user: User) => void }) => {
 const AdminDashboard = () => {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newRaffle, setNewRaffle] = useState({
     name: '',
     description: '',
@@ -609,7 +666,17 @@ const AdminDashboard = () => {
     total_numbers: 100,
     end_date: '',
     image_url: '',
-    profit_percent: 30
+    profit_percent: 30,
+    progress_percent: 0,
+    promotion: {
+      active: false,
+      package_quantity: 1,
+      package_price: 0,
+      original_price: 0,
+      start_date: '',
+      end_date: '',
+      label: '🔥 MEGA PROMOÇÃO'
+    }
   });
   const [creating, setCreating] = useState(false);
 
@@ -623,37 +690,69 @@ const AdminDashboard = () => {
     return () => unsubscribe();
   }, []);
 
+  const handleEdit = (raffle: Raffle) => {
+    setEditingId(raffle.id);
+    setNewRaffle({
+      name: raffle.name,
+      description: raffle.description,
+      price: raffle.price,
+      total_numbers: raffle.total_numbers,
+      end_date: raffle.end_date,
+      image_url: raffle.image_url,
+      profit_percent: raffle.profit_percent,
+      progress_percent: raffle.progress_percent || 0,
+      promotion: raffle.promotion || {
+        active: false,
+        package_quantity: 1,
+        package_price: 0,
+        original_price: 0,
+        start_date: '',
+        end_date: '',
+        label: '🔥 MEGA PROMOÇÃO'
+      }
+    });
+    setShowCreate(true);
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
     try {
-      const raffleData = {
-        ...newRaffle,
-        active: 1,
-        created_at: new Date().toISOString()
-      };
-      
-      const docRef = await addDoc(collection(db, "raffles"), raffleData);
-      
-      // Generate numbers (batching for performance)
-      const batchSize = 500;
-      const total = newRaffle.total_numbers;
-      
-      for (let i = 0; i < total; i += batchSize) {
-        const batch = writeBatch(db);
-        const end = Math.min(i + batchSize, total);
-        for (let j = i; j < end; j++) {
-          const numRef = doc(collection(db, "raffles", docRef.id, "numbers"));
-          batch.set(numRef, {
-            number: j,
-            status: 'available',
-            updated_at: new Date().toISOString()
-          });
+      if (editingId) {
+        await updateDoc(doc(db, "raffles", editingId), {
+          ...newRaffle,
+          updated_at: new Date().toISOString()
+        });
+      } else {
+        const raffleData = {
+          ...newRaffle,
+          active: 1,
+          created_at: new Date().toISOString()
+        };
+        
+        const docRef = await addDoc(collection(db, "raffles"), raffleData);
+        
+        // Generate numbers (batching for performance)
+        const batchSize = 500;
+        const total = newRaffle.total_numbers;
+        
+        for (let i = 0; i < total; i += batchSize) {
+          const batch = writeBatch(db);
+          const end = Math.min(i + batchSize, total);
+          for (let j = i; j < end; j++) {
+            const numRef = doc(collection(db, "raffles", docRef.id, "numbers"));
+            batch.set(numRef, {
+              number: j,
+              status: 'available',
+              updated_at: new Date().toISOString()
+            });
+          }
+          await batch.commit();
         }
-        await batch.commit();
       }
 
       setShowCreate(false);
+      setEditingId(null);
       setNewRaffle({
         name: '',
         description: '',
@@ -661,10 +760,21 @@ const AdminDashboard = () => {
         total_numbers: 100,
         end_date: '',
         image_url: '',
-        profit_percent: 30
+        profit_percent: 30,
+        progress_percent: 0,
+        promotion: {
+          active: false,
+          package_quantity: 1,
+          package_price: 0,
+          original_price: 0,
+          start_date: '',
+          end_date: '',
+          label: '🔥 MEGA PROMOÇÃO'
+        }
       });
     } catch (err) {
-      alert("Erro ao criar rifa.");
+      console.error(err);
+      alert("Erro ao salvar rifa.");
     } finally {
       setCreating(false);
     }
@@ -746,7 +856,7 @@ const AdminDashboard = () => {
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex gap-2">
-                    <button className="p-2 text-slate-400 hover:text-primary transition-colors"><Settings className="w-4 h-4" /></button>
+                    <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors"><Settings className="w-4 h-4" /></button>
                     <button className="p-2 text-slate-400 hover:text-secondary transition-colors"><Trophy className="w-4 h-4" /></button>
                   </div>
                 </td>
@@ -774,8 +884,8 @@ const AdminDashboard = () => {
               className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h2 className="text-xl font-bold text-slate-900">Criar Nova Rifa</h2>
-                <button onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-600"><X /></button>
+                <h2 className="text-xl font-bold text-slate-900">{editingId ? 'Editar Rifa' : 'Criar Nova Rifa'}</h2>
+                <button onClick={() => { setShowCreate(false); setEditingId(null); }} className="text-slate-400 hover:text-slate-600"><X /></button>
               </div>
               <form onSubmit={handleCreate} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -815,9 +925,10 @@ const AdminDashboard = () => {
                     <input 
                       type="number" 
                       required
+                      disabled={!!editingId}
                       value={newRaffle.total_numbers}
                       onChange={e => setNewRaffle({...newRaffle, total_numbers: parseInt(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
                     />
                   </div>
                   <div>
@@ -840,10 +951,97 @@ const AdminDashboard = () => {
                       placeholder="https://..."
                     />
                   </div>
+
+                  <div className="md:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                    <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-primary" />
+                      Configurações Visuais (Fake)
+                    </h3>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Porcentagem de Progresso (%)</label>
+                      <input 
+                        type="range" min="0" max="100"
+                        value={newRaffle.progress_percent}
+                        onChange={e => setNewRaffle({...newRaffle, progress_percent: parseInt(e.target.value)})}
+                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                      <div className="text-right text-xs font-bold text-primary mt-1">{newRaffle.progress_percent}%</div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2 p-4 bg-red-50 rounded-2xl border border-red-100 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-bold text-red-900 flex items-center gap-2">
+                        <Trophy className="w-4 h-4" />
+                        Promoção Mega Gatilho
+                      </h3>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer"
+                          checked={newRaffle.promotion.active}
+                          onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, active: e.target.checked}})}
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                      </label>
+                    </div>
+                    
+                    {newRaffle.promotion.active && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div>
+                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Label da Promoção</label>
+                          <input 
+                            type="text"
+                            value={newRaffle.promotion.label}
+                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, label: e.target.value}})}
+                            className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Qtd. Números no Pacote</label>
+                          <input 
+                            type="number"
+                            value={newRaffle.promotion.package_quantity}
+                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, package_quantity: parseInt(e.target.value)}})}
+                            className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Preço Promocional (R$)</label>
+                          <input 
+                            type="number" step="0.01"
+                            value={newRaffle.promotion.package_price}
+                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, package_price: parseFloat(e.target.value)}})}
+                            className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Data Início</label>
+                          <input 
+                            type="date"
+                            value={newRaffle.promotion.start_date}
+                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, start_date: e.target.value}})}
+                            className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Data Fim</label>
+                          <input 
+                            type="date"
+                            value={newRaffle.promotion.end_date}
+                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, end_date: e.target.value}})}
+                            className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="pt-6 border-t border-slate-100 flex gap-4">
-                  <button type="button" onClick={() => setShowCreate(false)} className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-colors">Cancelar</button>
-                  <button type="submit" className="flex-1 btn-primary py-3">Criar Rifa</button>
+                  <button type="button" onClick={() => { setShowCreate(false); setEditingId(null); }} className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-colors">Cancelar</button>
+                  <button type="submit" disabled={creating} className="flex-1 btn-primary py-3 disabled:opacity-50">
+                    {creating ? 'Salvando...' : (editingId ? 'Salvar Alterações' : 'Criar Rifa')}
+                  </button>
                 </div>
               </form>
             </motion.div>
