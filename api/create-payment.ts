@@ -65,7 +65,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
 
     if (!authResponse.ok) {
-      throw new Error("Erro ao autenticar na SyncPayments");
+      const errorText = await authResponse.text();
+      console.error("Erro SyncPayments Auth:", errorText);
+      return res.status(authResponse.status).json({
+        error: "Erro ao autenticar na SyncPayments",
+        details: errorText
+      });
     }
 
     const authData = await authResponse.json();
