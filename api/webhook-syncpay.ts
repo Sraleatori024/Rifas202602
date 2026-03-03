@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb } from './_firebase';
-import { FieldValue } from 'firebase-admin/firestore';
+import { db } from '../lib/firebase';
+import { doc, getDoc, writeBatch, collection, query, where, getDocs, increment, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -8,52 +8,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const { status, external_id } = req.body;
-  const db = getDb();
 
   if (status !== "paid") {
     return res.json({ received: true });
   }
 
   try {
-    const paymentRef = db.collection("payments").doc(external_id);
-    const paymentSnap = await paymentRef.get();
+    const paymentRef = doc(db, "payments", external_id);
+    const paymentSnap = await getDoc(paymentRef);
 
-    if (!paymentSnap.exists || paymentSnap.data()?.status === "paid") {
+    if (!paymentSnap.exists() || paymentSnap.data()?.status === "paid") {
       return res.json({ received: true });
     }
 
     const { raffleId, numbers, buyer, amount } = paymentSnap.data()!;
 
-    const batch = db.batch();
-    const raffleRef = db.collection("raffles").doc(raffleId);
-    const numbersRef = raffleRef.collection("numbers");
+    const batch = writeBatch(db);
+    const raffleRef = doc(db, "raffles", raffleId);
+    const numbersRef = collection(raffleRef, "numbers");
 
-    const selectedNumbersSnap = await numbersRef.where("number", "in", numbers).get();
-    for (const doc of selectedNumbersSnap.docs) {
-      batch.update(doc.ref, {
+    const q = query(numbersRef, where("number", "in", numbers));
+    const selectedNumbersSnap = await getDocs(q);
+    
+    for (const docSnap of selectedNumbersSnap.docs) {
+      batch.update(docSnap.ref, {
         status: 'sold',
         buyer_name: buyer.name,
         buyer_whatsapp: buyer.whatsapp,
         buyer_instagram: buyer.instagram || null,
-        updated_at: FieldValue.serverTimestamp()
+        updated_at: serverTimestamp()
       });
     }
 
     batch.update(raffleRef, {
-      sold_count: FieldValue.increment(numbers.length),
-      revenue: FieldValue.increment(amount),
-      updated_at: FieldValue.serverTimestamp()
+      sold_count: increment(numbers.length),
+      revenue: increment(amount),
+      updated_at: serverTimestamp()
     });
 
     batch.update(paymentRef, {
       status: "paid",
-      paid_at: FieldValue.serverTimestamp()
+      paid_at: serverTimestamp()
     });
 
     // Associate numbers with user
-    const userRef = db.collection("users").doc(buyer.whatsapp);
+    const userRef = doc(db, "users", buyer.whatsapp);
     batch.set(userRef, {
-      purchases: FieldValue.arrayUnion({
+      purchases: arrayUnion({
         raffleId,
         numbers,
         paid_at: new Date().toISOString()
@@ -64,6 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.json({ success: true });
 
   } catch (error) {
+    console.error("Webhook Error:", error);
     res.status(500).json({ error: "Erro ao processar webhook." });
   }
 }

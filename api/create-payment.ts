@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb } from './_firebase';
-import { FieldValue } from 'firebase-admin/firestore';
+import { db } from '../lib/firebase';
+import { collection, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -8,7 +8,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const { raffleId, numbers, buyer } = req.body;
-  const db = getDb();
 
   if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
     return res.status(400).json({ error: "Dados incompletos (Nome e WhatsApp são obrigatórios)" });
@@ -21,22 +20,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     // 1. Handle User (Simple System)
-    const userRef = db.collection("users").doc(buyer.whatsapp);
-    const userSnap = await userRef.get();
+    const userRef = doc(db, "users", buyer.whatsapp);
+    const userSnap = await getDoc(userRef);
     
-    if (!userSnap.exists) {
-      await userRef.set({
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
         name: buyer.name,
         whatsapp: buyer.whatsapp,
         instagram: buyer.instagram || "",
-        created_at: FieldValue.serverTimestamp()
+        created_at: serverTimestamp()
       });
     }
 
-    const raffleRef = db.collection("raffles").doc(raffleId);
-    const raffleSnap = await raffleRef.get();
+    const raffleRef = doc(db, "raffles", raffleId);
+    const raffleSnap = await getDoc(raffleRef);
     
-    if (!raffleSnap.exists) {
+    if (!raffleSnap.exists()) {
       return res.status(404).json({ error: "Rifa não encontrada." });
     }
 
@@ -44,7 +43,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const unitPrice = raffleData.price || 0;
     const totalAmount = numbers.length * unitPrice;
 
-    const paymentRef = db.collection("payments").doc();
+    // 2. Create a pending payment record
+    const paymentRef = doc(collection(db, "payments"));
     const externalId = paymentRef.id;
 
     const syncPayResponse = await fetch("https://api.syncpay.com.br/v1/pix", {
@@ -72,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: "Erro ao gerar PIX na SyncPay." });
     }
 
-    await paymentRef.set({
+    await setDoc(paymentRef, {
       raffleId,
       numbers,
       buyer,
@@ -81,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       syncpay_id: syncPayData.id,
       pix_qrcode: syncPayData.pix_qrcode,
       pix_copy_paste: syncPayData.pix_copy_paste,
-      created_at: FieldValue.serverTimestamp()
+      created_at: serverTimestamp()
     });
 
     res.json({ 
@@ -92,6 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (error) {
+    console.error("Error in create-payment:", error);
     res.status(500).json({ error: "Erro interno ao processar pagamento." });
   }
 }
