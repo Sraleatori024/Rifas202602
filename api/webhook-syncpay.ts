@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db } from '../lib/firebase';
+import { db } from '@/lib/firebase';
 import { doc, getDoc, writeBatch, collection, query, where, getDocs, increment, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
