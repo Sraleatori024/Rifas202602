@@ -278,6 +278,7 @@ const RaffleDetails = () => {
   const [numbers, setNumbers] = useState<RaffleNumber[]>([]);
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
   const [buyerInfo, setBuyerInfo] = useState({ name: '', whatsapp: '', instagram: '' });
+  const [pixData, setPixData] = useState<{ qrcode: string, copyPaste: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(1); // 1: Selection, 2: Info, 3: Payment
   const [stats, setStats] = useState({ total: 0, sold: 0, available: 0 });
@@ -353,6 +354,11 @@ const RaffleDetails = () => {
     });
 
     if (res.ok) {
+      const data = await res.json();
+      setPixData({
+        qrcode: data.pix_qrcode,
+        copyPaste: data.pix_copy_paste
+      });
       setStep(3);
     } else {
       const error = await res.json();
@@ -521,9 +527,42 @@ const RaffleDetails = () => {
               <div className="w-20 h-20 bg-secondary/10 text-secondary rounded-full flex items-center justify-center mx-auto mb-6">
                 <CheckCircle2 className="w-12 h-12" />
               </div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-2">Compra Realizada!</h3>
-              <p className="text-slate-600 mb-8">Seus números foram reservados com sucesso. Boa sorte no sorteio!</p>
-              <Link to="/" className="btn-primary inline-block">Voltar ao Início</Link>
+              <h3 className="text-2xl font-bold text-slate-900 mb-2">Pagamento Gerado!</h3>
+              <p className="text-slate-600 mb-8">Escaneie o QR Code ou copie o código PIX para finalizar sua compra.</p>
+              
+              {pixData && (
+                <div className="space-y-6 mb-8">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm inline-block mx-auto">
+                    <img src={pixData.qrcode} alt="PIX QR Code" className="w-48 h-48 mx-auto" />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-slate-500 uppercase">Código Copia e Cola</p>
+                    <div className="flex gap-2">
+                      <input 
+                        readOnly 
+                        value={pixData.copyPaste}
+                        className="flex-1 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl text-xs font-mono truncate"
+                      />
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(pixData.copyPaste);
+                          alert("Código PIX copiado!");
+                        }}
+                        className="btn-primary px-4 py-2 text-xs"
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 text-amber-700 text-sm mb-8">
+                <strong>Atenção:</strong> Seus números serão reservados automaticamente assim que o pagamento for confirmado.
+              </div>
+
+              <Link to="/" className="btn-primary inline-block w-full">Voltar ao Início</Link>
             </motion.div>
           )}
         </div>

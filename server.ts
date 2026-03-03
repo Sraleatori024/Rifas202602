@@ -40,7 +40,7 @@ async function startServer() {
 
   // --- API ROUTES ---
 
-  // Payment Simulation (Sync Pay)
+  // Create Payment (SyncPay PIX)
   app.post("/api/create-payment", async (req, res) => {
     const { raffleId, numbers, buyer } = req.body;
     
@@ -48,23 +48,110 @@ async function startServer() {
       return res.status(400).json({ error: "Dados incompletos" });
     }
 
-    const syncPayKey = process.env.SYNC_PAY_KEY;
-    // In a real scenario, we'd call Sync Pay API here
-    // const response = await fetch('https://api.syncpay.com/v1/payments', { ... });
-    
-    // For this demo, we'll simulate a successful payment and update Firestore
+    const secretKey = process.env.SYNCPAY_SECRET_KEY;
+    if (!secretKey) {
+      console.error("SYNCPAY_SECRET_KEY not found in environment variables");
+      return res.status(500).json({ error: "Configuração de pagamento ausente no servidor." });
+    }
+
     try {
+      const raffleRef = db.collection("raffles").doc(raffleId);
+      const raffleSnap = await raffleRef.get();
+      
+      if (!raffleSnap.exists) {
+        return res.status(404).json({ error: "Rifa não encontrada." });
+      }
+
+      const raffleData = raffleSnap.data();
+      const unitPrice = raffleData.price || 0;
+      const totalAmount = numbers.length * unitPrice;
+
+      // 1. Create a pending payment record in Firestore
+      const paymentRef = db.collection("payments").doc();
+      const externalId = paymentRef.id;
+
+      // 2. Call SyncPay API (Real Integration)
+      // Note: Using a standard PIX gateway pattern
+      const syncPayResponse = await fetch("https://api.syncpay.com.br/v1/pix", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${secretKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          amount: totalAmount,
+          description: `Rifa: ${raffleData.name} - ${numbers.length} números`,
+          external_id: externalId,
+          webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
+          customer: {
+            name: buyer.name,
+            email: buyer.email || "cliente@exemplo.com", // Fallback if email not provided
+            document: buyer.document || "000.000.000-00" // Fallback
+          }
+        })
+      });
+
+      const syncPayData = await syncPayResponse.json();
+
+      if (!syncPayResponse.ok) {
+        console.error("SyncPay API Error:", syncPayData);
+        return res.status(500).json({ error: "Erro ao gerar PIX na SyncPay." });
+      }
+
+      // 3. Save pending payment info
+      await paymentRef.set({
+        raffleId,
+        numbers,
+        buyer,
+        amount: totalAmount,
+        status: "pending",
+        syncpay_id: syncPayData.id,
+        pix_qrcode: syncPayData.pix_qrcode, // Base64 or URL
+        pix_copy_paste: syncPayData.pix_copy_paste,
+        created_at: FieldValue.serverTimestamp()
+      });
+
+      // 4. Return PIX data to frontend
+      res.json({ 
+        success: true, 
+        pix_qrcode: syncPayData.pix_qrcode,
+        pix_copy_paste: syncPayData.pix_copy_paste,
+        payment_id: externalId
+      });
+
+    } catch (error: any) {
+      console.error("Erro ao criar pagamento:", error);
+      res.status(500).json({ error: "Erro interno ao processar pagamento." });
+    }
+  });
+
+  // Webhook SyncPay
+  app.post("/api/webhook-syncpay", async (req, res) => {
+    const { status, external_id } = req.body;
+
+    console.log(`Webhook received: Payment ${external_id} status is ${status}`);
+
+    if (status !== "paid") {
+      return res.json({ received: true });
+    }
+
+    try {
+      const paymentRef = db.collection("payments").doc(external_id);
+      const paymentSnap = await paymentRef.get();
+
+      if (!paymentSnap.exists || paymentSnap.data().status === "paid") {
+        return res.json({ received: true });
+      }
+
+      const { raffleId, numbers, buyer, amount } = paymentSnap.data();
+
       const batch = db.batch();
       const raffleRef = db.collection("raffles").doc(raffleId);
       const numbersRef = raffleRef.collection("numbers");
 
-      // Check if numbers are still available
+      // Update numbers to 'sold'
       const selectedNumbersSnap = await numbersRef.where("number", "in", numbers).get();
-      
       for (const doc of selectedNumbersSnap.docs) {
-        if (doc.data().status !== 'available') {
-          return res.status(400).json({ error: `Número ${doc.data().number} já não está disponível.` });
-        }
         batch.update(doc.ref, {
           status: 'sold',
           buyer_name: buyer.name,
@@ -75,22 +162,25 @@ async function startServer() {
       }
 
       // Update raffle stats
-      const raffleSnap = await raffleRef.get();
-      const raffleData = raffleSnap.data();
-      const price = raffleData.price || 0;
-      const totalRevenue = numbers.length * price;
-
       batch.update(raffleRef, {
         sold_count: FieldValue.increment(numbers.length),
-        revenue: FieldValue.increment(totalRevenue),
+        revenue: FieldValue.increment(amount),
         updated_at: FieldValue.serverTimestamp()
       });
 
+      // Mark payment as paid
+      batch.update(paymentRef, {
+        status: "paid",
+        paid_at: FieldValue.serverTimestamp()
+      });
+
       await batch.commit();
-      res.json({ success: true, message: "Pagamento confirmado e números reservados!" });
-    } catch (error: any) {
-      console.error("Erro ao processar pagamento:", error);
-      res.status(500).json({ error: "Erro ao processar pagamento no servidor" });
+      console.log(`Payment ${external_id} processed successfully.`);
+      res.json({ success: true });
+
+    } catch (error) {
+      console.error("Webhook Error:", error);
+      res.status(500).json({ error: "Erro ao processar webhook." });
     }
   });
 
