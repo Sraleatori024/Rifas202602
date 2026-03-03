@@ -55,6 +55,19 @@ async function startServer() {
     }
 
     try {
+      // 1. Handle User (Simple System)
+      const userRef = db.collection("users").doc(buyer.whatsapp);
+      const userSnap = await userRef.get();
+      
+      if (!userSnap.exists) {
+        await userRef.set({
+          name: buyer.name,
+          whatsapp: buyer.whatsapp,
+          instagram: buyer.instagram || "",
+          created_at: FieldValue.serverTimestamp()
+        });
+      }
+
       const raffleRef = db.collection("raffles").doc(raffleId);
       const raffleSnap = await raffleRef.get();
       
@@ -174,6 +187,16 @@ async function startServer() {
         paid_at: FieldValue.serverTimestamp()
       });
 
+      // Associate numbers with user
+      const userRef = db.collection("users").doc(buyer.whatsapp);
+      batch.set(userRef, {
+        purchases: FieldValue.arrayUnion({
+          raffleId,
+          numbers,
+          paid_at: new Date().toISOString()
+        })
+      }, { merge: true });
+
       await batch.commit();
       console.log(`Payment ${external_id} processed successfully.`);
       res.json({ success: true });
@@ -181,6 +204,42 @@ async function startServer() {
     } catch (error) {
       console.error("Webhook Error:", error);
       res.status(500).json({ error: "Erro ao processar webhook." });
+    }
+  });
+
+  // Consultar Números
+  app.post("/api/consultar-numeros", async (req, res) => {
+    const { whatsapp } = req.body;
+    if (!whatsapp) return res.status(400).json({ error: "WhatsApp é obrigatório" });
+
+    try {
+      const userRef = db.collection("users").doc(whatsapp);
+      const userSnap = await userRef.get();
+
+      if (!userSnap.exists) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+
+      const userData = userSnap.data()!;
+      const purchases = userData.purchases || [];
+      const enrichedPurchases = await Promise.all(purchases.map(async (p: any) => {
+        const raffleSnap = await db.collection("raffles").doc(p.raffleId).get();
+        return {
+          ...p,
+          raffleName: raffleSnap.exists ? raffleSnap.data()?.name : "Rifa Excluída"
+        };
+      }));
+
+      res.json({
+        success: true,
+        name: userData.name,
+        whatsapp: userData.whatsapp,
+        instagram: userData.instagram,
+        purchases: enrichedPurchases
+      });
+    } catch (error) {
+      console.error("Consult Error:", error);
+      res.status(500).json({ error: "Erro ao consultar números." });
     }
   });
 

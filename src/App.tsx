@@ -54,6 +54,33 @@ import {
 
 const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [showConsult, setShowConsult] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [consultResult, setConsultResult] = useState<any>(null);
+  const [consulting, setConsulting] = useState(false);
+
+  const handleConsult = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConsulting(true);
+    setConsultResult(null);
+    try {
+      const res = await fetch('/api/consultar-numeros', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whatsapp: phone })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setConsultResult(data);
+      } else {
+        alert(data.error || "Erro ao consultar.");
+      }
+    } catch (err) {
+      alert("Erro de conexão.");
+    } finally {
+      setConsulting(false);
+    }
+  };
 
   return (
     <nav className="sticky top-0 z-50 glass bg-white/90">
@@ -72,6 +99,13 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
 
           <div className="hidden md:flex items-center space-x-8">
             <Link to="/" className="text-slate-600 hover:text-primary font-medium transition-colors">Início</Link>
+            <button 
+              onClick={() => setShowConsult(true)}
+              className="text-slate-600 hover:text-primary font-medium transition-colors flex items-center gap-2"
+            >
+              <Users className="w-4 h-4" />
+              Meus Números
+            </button>
             {user?.role === 'admin' && (
               <Link to="/admin" className="text-slate-600 hover:text-primary font-medium transition-colors">Painel Admin</Link>
             )}
@@ -88,7 +122,13 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
             )}
           </div>
 
-          <div className="md:hidden flex items-center">
+          <div className="md:hidden flex items-center gap-4">
+            <button 
+              onClick={() => setShowConsult(true)}
+              className="text-slate-600 hover:text-primary"
+            >
+              <Users className="w-6 h-6" />
+            </button>
             <button onClick={() => setIsOpen(!isOpen)} className="text-slate-600">
               {isOpen ? <X /> : <Menu />}
             </button>
@@ -107,6 +147,12 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
           >
             <div className="px-4 pt-2 pb-6 space-y-2">
               <Link to="/" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-slate-600 font-medium">Início</Link>
+              <button 
+                onClick={() => { setShowConsult(true); setIsOpen(false); }}
+                className="w-full text-left px-3 py-2 text-slate-600 font-medium"
+              >
+                Meus Números
+              </button>
               {user?.role === 'admin' && (
                 <Link to="/admin" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-slate-600 font-medium">Painel Admin</Link>
               )}
@@ -122,6 +168,84 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
               )}
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Consult Modal */}
+      <AnimatePresence>
+        {showConsult && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowConsult(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h2 className="text-xl font-bold text-slate-900">Consultar Meus Números</h2>
+                <button onClick={() => setShowConsult(false)} className="text-slate-400 hover:text-slate-600"><X /></button>
+              </div>
+              <div className="p-6 space-y-6">
+                <form onSubmit={handleConsult} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Seu WhatsApp</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="tel" 
+                        required
+                        value={phone}
+                        onChange={e => setPhone(e.target.value)}
+                        className="flex-1 px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        placeholder="(00) 00000-0000"
+                      />
+                      <button type="submit" disabled={consulting} className="btn-primary px-6">
+                        {consulting ? '...' : 'Buscar'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                {consultResult && (
+                  <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <p className="text-xs text-slate-500 font-bold uppercase">Nome</p>
+                      <p className="font-bold text-slate-900">{consultResult.name}</p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500 font-bold uppercase">Suas Participações</p>
+                      {consultResult.purchases.length === 0 ? (
+                        <p className="text-sm text-slate-400 italic">Nenhuma compra confirmada ainda.</p>
+                      ) : (
+                        consultResult.purchases.map((p: any, idx: number) => (
+                          <div key={idx} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-2">
+                            <div className="flex justify-between items-start">
+                              <p className="font-bold text-slate-900 text-sm">{p.raffleName}</p>
+                              <span className="text-[10px] text-slate-400">{new Date(p.paid_at).toLocaleDateString()}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {p.numbers.map((n: number) => (
+                                <span key={n} className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold rounded">
+                                  {n.toString().padStart(2, '0')}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </nav>
