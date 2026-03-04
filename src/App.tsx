@@ -75,7 +75,8 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
       } else {
         alert(data.error || "Erro ao consultar.");
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error("Erro de conexão:", err);
       alert("Erro de conexão.");
     } finally {
       setConsulting(false);
@@ -466,27 +467,32 @@ const RaffleDetails = () => {
       return;
     }
 
-    // Call the secure API for payment simulation
-    const res = await fetch('/api/create-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        raffleId,
-        numbers: selectedNumbers,
-        buyer: buyerInfo
-      })
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      setPixData({
-        qrcode: data.pix_qrcode,
-        copyPaste: data.pix_copy_paste
+    try {
+      // Call the secure API for payment simulation
+      const res = await fetch('/api/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raffleId,
+          numbers: selectedNumbers,
+          buyer: buyerInfo
+        })
       });
-      setStep(3);
-    } else {
-      const error = await res.json();
-      alert(error.error || "Erro ao processar compra.");
+
+      if (res.ok) {
+        const data = await res.json();
+        setPixData({
+          qrcode: data.pix_qrcode,
+          copyPaste: data.pix_copy_paste
+        });
+        setStep(3);
+      } else {
+        const error = await res.json();
+        alert(error.error || "Erro ao processar compra.");
+      }
+    } catch (err: any) {
+      console.error("Erro ao processar compra:", err);
+      alert("Erro ao processar compra.");
     }
   };
 
@@ -950,37 +956,93 @@ const AdminDashboard = () => {
     return revenueGoalMet && salesGoalMet;
   };
 
-  const handleDraw = (raffle: Raffle) => {
+  const handleDraw = async (raffle: Raffle) => {
     if (!isGoalMet(raffle)) {
       alert("Meta mínima ainda não atingida. Sorteio bloqueado.");
       return;
     }
-    alert(`Iniciando sorteio para: ${raffle.name}`);
-    // Implement draw logic here
+
+    if (!window.confirm(`Deseja realmente realizar o sorteio da rifa "${raffle.name}" agora?`)) {
+      return;
+    }
+
+    try {
+      console.log("Iniciando sorteio...");
+      const numbersRef = collection(db, "raffles", raffle.id, "numbers");
+      const q = query(numbersRef, where("status", "==", "sold"));
+      const soldNumbersSnap = await getDocs(q);
+
+      if (soldNumbersSnap.empty) {
+        alert("Nenhum número foi vendido para esta rifa. Sorteio cancelado.");
+        return;
+      }
+
+      const soldNumbers = soldNumbersSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as any[];
+
+      // Randomly pick a winner
+      const winnerIndex = Math.floor(Math.random() * soldNumbers.length);
+      const winner = soldNumbers[winnerIndex];
+
+      console.log("Ganhador sorteado:", winner);
+
+      // Save draw result
+      const drawRef = doc(collection(db, "draws"));
+      await setDoc(drawRef, {
+        raffleId: raffle.id,
+        raffleName: raffle.name,
+        winnerNumber: winner.number,
+        winnerName: winner.buyer_name,
+        winnerWhatsapp: winner.buyer_whatsapp,
+        winnerInstagram: winner.buyer_instagram || null,
+        drawn_at: new Date().toISOString()
+      });
+
+      // Update raffle status to inactive/finished
+      await updateDoc(doc(db, "raffles", raffle.id), {
+        active: 0,
+        winner_number: winner.number,
+        winner_name: winner.buyer_name,
+        finished_at: new Date().toISOString()
+      });
+
+      alert(`SORTEIO REALIZADO!\n\nGanhador: ${winner.buyer_name}\nNúmero: ${winner.number.toString().padStart(2, '0')}\n\nO resultado foi salvo no banco de dados.`);
+    } catch (err: any) {
+      console.error("Erro ao realizar sorteio:", err);
+      alert(`Erro ao realizar sorteio: ${err.message || "Erro desconhecido"}`);
+    }
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
     try {
+      console.log("Iniciando salvamento da rifa...");
       if (editingId) {
         await updateDoc(doc(db, "raffles", editingId), {
           ...newRaffle,
           updated_at: new Date().toISOString()
         });
+        console.log("Rifa atualizada com sucesso.");
       } else {
         const raffleData = {
           ...newRaffle,
           active: 1,
+          sold_count: 0,
+          revenue: 0,
           created_at: new Date().toISOString()
         };
         
         const docRef = await addDoc(collection(db, "raffles"), raffleData);
+        console.log("Rifa criada. ID:", docRef.id);
         
         // Generate numbers (batching for performance)
         const batchSize = 500;
         const total = newRaffle.total_numbers;
         
+        console.log(`Gerando ${total} números em lotes de ${batchSize}...`);
         for (let i = 0; i < total; i += batchSize) {
           const batch = writeBatch(db);
           const end = Math.min(i + batchSize, total);
@@ -993,6 +1055,7 @@ const AdminDashboard = () => {
             });
           }
           await batch.commit();
+          console.log(`Lote de ${i} a ${end} comitado.`);
         }
       }
 
@@ -1020,9 +1083,10 @@ const AdminDashboard = () => {
           label: '🔥 MEGA PROMOÇÃO'
         }
       });
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao salvar rifa.");
+      alert("Rifa salva com sucesso!");
+    } catch (err: any) {
+      console.error("Erro ao salvar rifa:", err);
+      alert(`Erro ao salvar rifa: ${err.message || "Erro desconhecido"}`);
     } finally {
       setCreating(false);
     }

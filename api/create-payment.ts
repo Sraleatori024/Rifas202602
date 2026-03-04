@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db } from '../lib/firebase.js';
+import { generateToken, createCashIn } from '../lib/syncpayments.js';
 import { collection, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -11,13 +12,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
     return res.status(400).json({ error: "Dados incompletos (Nome e WhatsApp são obrigatórios)" });
-  }
-
-  const clientId = process.env.SYNC_CLIENT_ID;
-  const clientSecret = process.env.SYNC_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    return res.status(500).json({ error: "Configuração de pagamento (SyncPayments) ausente no servidor." });
   }
 
   try {
@@ -50,58 +44,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const externalId = paymentRef.id;
 
     // 3. Get Auth Token from SyncPayments
-    const authResponse = await fetch(
-      "https://api.syncpayments.com.br/api/partner/v1/auth-token",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          client_id: clientId,
-          client_secret: clientSecret,
-        }),
-      }
-    );
-
-    if (!authResponse.ok) {
-      const errorText = await authResponse.text();
-      console.error("Erro SyncPayments Auth:", errorText);
-      return res.status(authResponse.status).json({
-        error: "Erro ao autenticar na SyncPayments",
-        details: errorText
+    let accessToken;
+    try {
+      accessToken = await generateToken();
+    } catch (authError: any) {
+      return res.status(401).json({ 
+        error: "Erro ao autenticar na SyncPayments", 
+        details: authError.message 
       });
     }
 
-    const authData = await authResponse.json();
-    const accessToken = authData.access_token;
-
-    // 4. Create PIX using the token
-    // Note: Using the SyncPayments PIX endpoint
-    const syncPayResponse = await fetch("https://api.syncpayments.com.br/api/partner/v1/pix", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
+    // 4. Create Cash-In using the token
+    const cashInData = {
+      amount: totalAmount,
+      description: `Rifa: ${raffleData.name} - ${numbers.length} números`,
+      webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
+      client: {
+        name: buyer.name,
+        cpf: buyer.document || buyer.cpf || "000.000.000-00",
+        email: buyer.email || "cliente@exemplo.com",
+        phone: buyer.whatsapp
       },
-      body: JSON.stringify({
-        amount: totalAmount,
-        description: `Rifa: ${raffleData.name} - ${numbers.length} números`,
-        external_id: externalId,
-        webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
-        customer: {
-          name: buyer.name,
-          email: buyer.email || "cliente@exemplo.com",
-          document: buyer.document || "000.000.000-00"
-        }
-      })
-    });
+      split: [], // Added split field as requested in structure
+      external_id: externalId 
+    };
 
-    const syncPayData: any = await syncPayResponse.json();
-
-    if (!syncPayResponse.ok) {
-      console.error("SyncPay Error:", syncPayData);
-      return res.status(500).json({ error: "Erro ao gerar PIX na SyncPayments." });
+    let syncPayData;
+    try {
+      syncPayData = await createCashIn(accessToken, cashInData);
+    } catch (apiError: any) {
+      return res.status(apiError.status || 500).json({
+        error: "Erro ao gerar cobrança na SyncPayments",
+        details: apiError.details || apiError.message
+      });
     }
 
     // 5. Save payment to Firebase
@@ -124,8 +99,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       payment_id: externalId
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in create-payment:", error);
-    res.status(500).json({ error: "Erro interno ao processar pagamento." });
+    res.status(500).json({ error: "Erro interno ao processar pagamento.", details: error.message });
   }
 }
+
