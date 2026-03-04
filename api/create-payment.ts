@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db } from '../lib/firebase.js';
+import { db, admin } from '../lib/firebase-admin';
 import { generateToken, createCashIn } from '../lib/syncpayments.js';
-import { collection, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -16,22 +15,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     // 1. Handle User (Simple System)
-    const userRef = doc(db, "users", buyer.whatsapp);
-    const userSnap = await getDoc(userRef);
+    const userRef = db.collection("users").doc(buyer.whatsapp);
+    const userSnap = await userRef.get();
     
-    if (!userSnap.exists()) {
-      await setDoc(userRef, {
+    if (!userSnap.exists) {
+      await userRef.set({
         name: buyer.name,
         whatsapp: buyer.whatsapp,
         instagram: buyer.instagram || "",
-        created_at: serverTimestamp()
+        created_at: admin.firestore.FieldValue.serverTimestamp()
       });
     }
 
-    const raffleRef = doc(db, "raffles", raffleId);
-    const raffleSnap = await getDoc(raffleRef);
+    const raffleRef = db.collection("raffles").doc(raffleId);
+    const raffleSnap = await raffleRef.get();
     
-    if (!raffleSnap.exists()) {
+    if (!raffleSnap.exists) {
       return res.status(404).json({ error: "Rifa não encontrada." });
     }
 
@@ -40,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const totalAmount = numbers.length * unitPrice;
 
     // 2. Create a pending payment record
-    const paymentRef = doc(collection(db, "payments"));
+    const paymentRef = db.collection("payments").doc();
     const externalId = paymentRef.id;
 
     // 3. Get Auth Token from SyncPayments
@@ -80,7 +79,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 5. Save payment to Firebase
-    await setDoc(paymentRef, {
+    await paymentRef.set({
       raffleId,
       numbers,
       buyer,
@@ -89,7 +88,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       syncpay_id: syncPayData.id,
       pix_qrcode: syncPayData.pix_qrcode,
       pix_copy_paste: syncPayData.pix_copy_paste,
-      created_at: serverTimestamp()
+      created_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.json({ 

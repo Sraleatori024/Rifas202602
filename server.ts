@@ -2,34 +2,15 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { db, admin } from "./lib/firebase-admin";
 
 import { generateToken, createCashIn } from "./lib/syncpayments";
 
 dotenv.config();
 
-// Initialize Firebase Admin
-try {
-  if (!getApps().length) {
-    initializeApp({
-      projectId: "rifas-2026-c4026",
-    });
-    console.log("Firebase Admin initialized successfully");
-  }
-} catch (error) {
-  console.error("Firebase Admin initialization error:", error);
-}
-
-let db: any;
+// Initialize Firebase Admin is now handled in lib/firebase-admin.ts
 
 async function startServer() {
-  try {
-    db = getFirestore();
-  } catch (e) {
-    console.error("Failed to initialize Firestore:", e);
-  }
-
   const app = express();
   app.use(express.json());
 
@@ -60,7 +41,7 @@ async function startServer() {
           name: buyer.name,
           whatsapp: buyer.whatsapp,
           instagram: buyer.instagram || "",
-          created_at: FieldValue.serverTimestamp()
+          created_at: admin.firestore.FieldValue.serverTimestamp()
         });
       }
 
@@ -127,7 +108,7 @@ async function startServer() {
         syncpay_id: syncPayData.id,
         pix_qrcode: syncPayData.pix_qrcode,
         pix_copy_paste: syncPayData.pix_copy_paste,
-        created_at: FieldValue.serverTimestamp()
+        created_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
       // 6. Return PIX data to frontend
@@ -195,28 +176,28 @@ async function startServer() {
             buyer_name: buyer.name,
             buyer_whatsapp: buyer.whatsapp,
             buyer_instagram: buyer.instagram || null,
-            updated_at: FieldValue.serverTimestamp()
+            updated_at: admin.firestore.FieldValue.serverTimestamp()
           });
         }
       }
 
       // Update raffle stats
       batch.update(raffleRef, {
-        sold_count: FieldValue.increment(numbers.length),
-        revenue: FieldValue.increment(amount),
-        updated_at: FieldValue.serverTimestamp()
+        sold_count: admin.firestore.FieldValue.increment(numbers.length),
+        revenue: admin.firestore.FieldValue.increment(amount),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
       // Mark payment as paid
       batch.update(paymentRef, {
         status: "paid",
-        paid_at: FieldValue.serverTimestamp()
+        paid_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
       // Associate numbers with user
       const userRef = db.collection("users").doc(buyer.whatsapp);
       batch.set(userRef, {
-        purchases: FieldValue.arrayUnion({
+        purchases: admin.firestore.FieldValue.arrayUnion({
           raffleId,
           numbers,
           paid_at: new Date().toISOString()

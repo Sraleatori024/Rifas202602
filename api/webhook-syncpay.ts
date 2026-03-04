@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db } from '../lib/firebase.js';
-import { doc, getDoc, writeBatch, collection, query, where, getDocs, increment, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
+import { db, admin } from '../lib/firebase-admin';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -14,21 +13,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const paymentRef = doc(db, "payments", external_id);
-    const paymentSnap = await getDoc(paymentRef);
+    const paymentRef = db.collection("payments").doc(external_id);
+    const paymentSnap = await paymentRef.get();
 
-    if (!paymentSnap.exists() || paymentSnap.data()?.status === "paid") {
+    if (!paymentSnap.exists || paymentSnap.data()?.status === "paid") {
       return res.json({ received: true });
     }
 
     const { raffleId, numbers, buyer, amount } = paymentSnap.data()!;
 
-    const batch = writeBatch(db);
-    const raffleRef = doc(db, "raffles", raffleId);
-    const numbersRef = collection(raffleRef, "numbers");
+    const batch = db.batch();
+    const raffleRef = db.collection("raffles").doc(raffleId);
+    const numbersRef = raffleRef.collection("numbers");
 
-    const q = query(numbersRef, where("number", "in", numbers));
-    const selectedNumbersSnap = await getDocs(q);
+    const selectedNumbersSnap = await numbersRef.where("number", "in", numbers).get();
     
     for (const docSnap of selectedNumbersSnap.docs) {
       batch.update(docSnap.ref, {
@@ -36,25 +34,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         buyer_name: buyer.name,
         buyer_whatsapp: buyer.whatsapp,
         buyer_instagram: buyer.instagram || null,
-        updated_at: serverTimestamp()
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
     }
 
     batch.update(raffleRef, {
-      sold_count: increment(numbers.length),
-      revenue: increment(amount),
-      updated_at: serverTimestamp()
+      sold_count: admin.firestore.FieldValue.increment(numbers.length),
+      revenue: admin.firestore.FieldValue.increment(amount),
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     batch.update(paymentRef, {
       status: "paid",
-      paid_at: serverTimestamp()
+      paid_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     // Associate numbers with user
-    const userRef = doc(db, "users", buyer.whatsapp);
+    const userRef = db.collection("users").doc(buyer.whatsapp);
     batch.set(userRef, {
-      purchases: arrayUnion({
+      purchases: admin.firestore.FieldValue.arrayUnion({
         raffleId,
         numbers,
         paid_at: new Date().toISOString()

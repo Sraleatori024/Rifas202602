@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db } from '../lib/firebase.js';
-import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase-admin';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -14,10 +13,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const userRef = doc(db, "users", whatsapp);
-    const userSnap = await getDoc(userRef);
+    const userRef = db.collection("users").doc(whatsapp);
+    const userSnap = await userRef.get();
 
-    if (!userSnap.exists()) {
+    if (!userSnap.exists) {
       return res.status(404).json({ error: "Usuário não encontrado" });
     }
 
@@ -26,11 +25,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Fetch raffle names for better UX
     const purchases = userData.purchases || [];
     const enrichedPurchases = await Promise.all(purchases.map(async (p: any) => {
-      const raffleRef = doc(db, "raffles", p.raffleId);
-      const raffleSnap = await getDoc(raffleRef);
+      const raffleRef = db.collection("raffles").doc(p.raffleId);
+      const raffleSnap = await raffleRef.get();
       return {
         ...p,
-        raffleName: raffleSnap.exists() ? raffleSnap.data()?.name : "Rifa Excluída"
+        raffleName: raffleSnap.exists ? raffleSnap.data()?.name : "Rifa Excluída"
       };
     }));
 
