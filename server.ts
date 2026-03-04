@@ -2,7 +2,19 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
-import { db, admin } from "./lib/firebase-admin";
+import admin from 'firebase-admin';
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+    }),
+  });
+}
+
+const db = admin.firestore();
 
 import { generateToken, createCashIn } from "./lib/syncpayments";
 
