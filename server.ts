@@ -37,36 +37,16 @@ async function generateToken() {
 }
 
 async function createCashIn(token: string, data: any) {
-  if (!token) {
-    throw new Error("Token de acesso é obrigatório para criar Cash-In.");
-  }
-
   const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
     method: "POST",
     headers: {
-      "Accept": "application/json",
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(data),
   });
 
-  const responseData = await response.json();
-
-  if (responseData && responseData.version && Object.keys(responseData).length === 1) {
-    console.error("API SyncPayments retornou apenas versão:", responseData);
-    throw new Error("A API retornou uma resposta genérica de versão. Verifique o payload.");
-  }
-
-  if (!response.ok) {
-    console.error("Erro ao criar Cash-In SyncPayments:", responseData);
-    const error: any = new Error("Erro na API SyncPayments");
-    error.status = response.status;
-    error.details = responseData;
-    throw error;
-  }
-
-  return responseData;
+  return await response.json();
 }
 
 async function startServer() {

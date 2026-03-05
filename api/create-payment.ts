@@ -35,37 +35,16 @@ async function generateToken() {
 }
 
 async function createCashIn(token: string, data: any) {
-  if (!token) {
-    throw new Error("Token de acesso é obrigatório para criar Cash-In.");
-  }
-
   const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
     method: "POST",
     headers: {
-      "Accept": "application/json",
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(data),
   });
 
-  const responseData = await response.json();
-
-  // Se a API retornar apenas { version: 2 }, significa que a requisição foi mal interpretada ou o endpoint está incorreto
-  if (responseData && responseData.version && Object.keys(responseData).length === 1) {
-    console.error("API SyncPayments retornou apenas versão. Verifique os headers e o payload:", responseData);
-    throw new Error("A API retornou uma resposta genérica de versão. Possível erro de configuração no payload ou headers.");
-  }
-
-  if (!response.ok) {
-    console.error("Erro ao criar Cash-In SyncPayments:", responseData);
-    const error: any = new Error("Erro na API SyncPayments");
-    error.status = response.status;
-    error.details = responseData;
-    throw error;
-  }
-
-  return responseData;
+  return await response.json();
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
