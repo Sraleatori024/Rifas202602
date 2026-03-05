@@ -1,55 +1,84 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import QRCode from "qrcode";
 import { db, admin } from "./lib/firebase-admin.js";
 
+// 3) Corrigir telefone para remover () e espaços
+const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
+
+// 4) Validar CPF com 11 números
+const normalizeCPF = (cpf: string) => {
+  const clean = String(cpf || "").replace(/\D/g, "");
+  return clean.length === 11 ? clean : null;
+};
+
+// 1) Criar função para gerar token automaticamente
 async function generateToken() {
-  const clientId = process.env.SYNC_CLIENT_ID;
-  const clientSecret = process.env.SYNC_CLIENT_SECRET;
+  const clientId = process.env.SYNC_CLIENT_ID || "89210cff-1a37-4cd0-825d-45fecd8e77bb";
+  const clientSecret = process.env.SYNC_CLIENT_SECRET || "dadc1b2c-86ee-4256-845a-d1511de315bb";
 
-  if (!clientId || !clientSecret) {
-    throw new Error("Configuração de API SyncPayments (SYNC_CLIENT_ID ou SYNC_CLIENT_SECRET) ausente.");
+  console.log("Gerando token de acesso SyncPayments...");
+  
+  try {
+    const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/auth-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok || !data.access_token) {
+      console.error("Erro ao gerar token:", data);
+      throw new Error(data.message || "Falha na autenticação");
+    }
+
+    return data.access_token;
+  } catch (error: any) {
+    console.error("Erro crítico no Token:", error.message);
+    throw error;
   }
-
-  const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/auth-token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Erro ao gerar token SyncPayments:", errorText);
-    throw new Error(`Falha na autenticação SyncPayments: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  if (!data.access_token) {
-    throw new Error("Resposta da SyncPayments não contém access_token.");
-  }
-
-  return data.access_token;
 }
 
-async function createCashIn(token: string, data: any) {
-  const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
-    method: "POST",
-    headers: {
-      "Accept": "application/json",
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(data)
-  });
+// 2) Usar esse token para criar o PIX
+async function createCashIn(token: string, payload: any) {
+  console.log("Iniciando Cash-In SyncPayments...");
+  
+  try {
+    const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
 
-  const json = await response.json();
-  console.log("SYNC FULL RESPONSE:", JSON.stringify(json));
-  return json;
+    const result = await response.json();
+    
+    // 8) Tratar erros corretamente e mostrar no console
+    console.log("SYNC RESPONSE:", result);
+
+    if (!response.ok || result.success === false) {
+      throw new Error(result.message || "Erro na API SyncPayments");
+    }
+
+    // A API retorna pix_code no corpo principal ou dentro de data
+    const data = result.data || result;
+    
+    return {
+      pix_code: data.pix_code || "",
+      identifier: data.identifier || ""
+    };
+  } catch (error: any) {
+    console.error("Erro no Cash-In:", error.message);
+    throw error;
+  }
 }
 
 async function startServer() {
@@ -69,108 +98,121 @@ async function startServer() {
   app.post("/api/create-payment", async (req, res) => {
     const { raffleId, numbers, buyer } = req.body;
     
+    // Validação básica de entrada
     if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
-      return res.status(400).json({ error: "Dados incompletos (Nome e WhatsApp são obrigatórios)" });
+      return res.status(400).json({ 
+        success: false, 
+        message: "Dados incompletos (Nome e WhatsApp são obrigatórios)" 
+      });
+    }
+
+    const normalizedCPF = normalizeCPF(buyer.cpf);
+    if (!normalizedCPF) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "CPF inválido. Deve conter 11 dígitos." 
+      });
     }
 
     try {
-      // 1. Handle User (Simple System)
-      const userRef = db.collection("users").doc(buyer.whatsapp);
-      const userSnap = await userRef.get();
-      
-      if (!userSnap.exists) {
-        await userRef.set({
-          name: buyer.name,
-          whatsapp: buyer.whatsapp,
-          instagram: buyer.instagram || "",
-          created_at: admin.firestore.FieldValue.serverTimestamp()
-        });
-      }
-
+      // 1. Buscar dados da rifa para calcular valor
       const raffleRef = db.collection("raffles").doc(raffleId);
       const raffleSnap = await raffleRef.get();
       
       if (!raffleSnap.exists) {
-        return res.status(404).json({ error: "Rifa não encontrada." });
+        return res.status(404).json({ success: false, message: "Rifa não encontrada." });
       }
 
-      const raffleData = raffleSnap.data();
+      const raffleData = raffleSnap.data()!;
       const unitPrice = raffleData.price || 0;
       const totalAmount = numbers.length * unitPrice;
 
-      // 2. Create a pending payment record
-      const paymentRef = db.collection("payments").doc();
-      const externalId = paymentRef.id;
-
-      // 3. Get Auth Token from SyncPayments
+      // 2. Gerar Token SyncPayments
       let accessToken;
       try {
         accessToken = await generateToken();
       } catch (authError: any) {
-        console.error("SyncPayments Auth Error:", authError.message);
         return res.status(401).json({ 
-          error: "Erro ao autenticar na SyncPayments", 
+          success: false, 
+          message: "Erro de autenticação na API de pagamentos", 
           details: authError.message 
         });
       }
 
-      // 4. Create Cash-In using the token
-      const data = {
-        amount: Number(totalAmount),
-        description: "Teste PIX",
+      // 3. Criar Pagamento na SyncPayments
+      const payload = {
+        amount: Number(totalAmount.toFixed(2)),
+        description: `Compra de rifa: ${raffleData.name || "Sorteio"}`,
         webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
         client: {
-          name: buyer.name || "Cliente",
-          phone: buyer.whatsapp,
+          name: buyer.name,
+          cpf: normalizedCPF,
           email: buyer.email || "cliente@exemplo.com",
-          cpf: "00000000000"
-        }
+          phone: normalizePhone(buyer.whatsapp)
+        },
+        // Opcional: split se necessário
+        split: [
+          {
+            percentage: 10,
+            user_id: "9f3c5b3a-41bc-4322-90e6-a87a98eefeca"
+          }
+        ]
       };
 
-      let syncPayData;
+      let syncPayResult;
       try {
-        syncPayData = await createCashIn(accessToken, data);
-        console.log("SYNC FULL RESPONSE:", JSON.stringify(syncPayData, null, 2));
+        syncPayResult = await createCashIn(accessToken, payload);
       } catch (apiError: any) {
-      console.error("SyncPayments API Error:", apiError.details || apiError.message);
-      return res.status(apiError.status || 500).json({
-        error: "Erro ao gerar cobrança na SyncPayments",
-        details: apiError.details || apiError.message
+        // 9) Caso a API retorne erro, retornar no JSON para o frontend
+        return res.status(500).json({
+          success: false,
+          message: apiError.message || "Erro ao gerar PIX na SyncPayments"
+        });
+      }
+
+      const { pix_code, identifier } = syncPayResult;
+
+      if (!pix_code) {
+        throw new Error("Código PIX não retornado pela API");
+      }
+
+      // 6) Gerar QR Code automaticamente usando a biblioteca qrcode
+      const qrCodeBase64 = await QRCode.toDataURL(pix_code);
+
+      // 5) Retornar para o frontend: pix_code, qr_code (base64), identifier
+      const responseData = {
+        success: true,
+        pix_code: pix_code,
+        qr_code: qrCodeBase64,
+        identifier: identifier
+      };
+
+      // Salvar registro do pagamento no Firestore (opcional mas recomendado)
+      const paymentRef = db.collection("payments").doc();
+      await paymentRef.set({
+        raffleId,
+        numbers,
+        buyer: {
+          ...buyer,
+          cpf: normalizedCPF,
+          phone: payload.client.phone
+        },
+        amount: totalAmount,
+        status: "pending",
+        syncpay_id: identifier,
+        pix_code: pix_code,
+        created_at: admin.firestore.FieldValue.serverTimestamp()
       });
-    }
 
-    if (!syncPayData) {
-      throw new Error("Falha ao gerar PIX: Resposta vazia da API.");
-    }
-
-    const pixData = syncPayData.data || syncPayData;
-    const qrcode = pixData.pix_qrcode || pixData.qrcode || pixData.pix_code;
-    const copyPaste = pixData.pix_copy_paste || pixData.pix_link || pixData.copy_paste;
-
-    // 5. Save pending payment info
-    await paymentRef.set({
-      raffleId,
-      numbers,
-      buyer,
-      amount: totalAmount,
-      status: "pending",
-      syncpay_id: pixData.id || syncPayData.id || null,
-      pix_qrcode: qrcode || null,
-      pix_copy_paste: copyPaste || null,
-      created_at: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    // 6. Return PIX data to frontend
-    res.json({ 
-      success: true, 
-      pix_qrcode: qrcode,
-      pix_copy_paste: copyPaste,
-      payment_id: externalId
-    });
+      res.json(responseData);
 
     } catch (error: any) {
       console.error("Erro ao criar pagamento:", error);
-      res.status(500).json({ error: "Erro interno ao processar pagamento.", details: error.message });
+      res.status(500).json({ 
+        success: false, 
+        message: "Erro interno ao processar pagamento", 
+        details: error.message 
+      });
     }
   });
 

@@ -1,6 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, admin } from '../lib/firebase-admin.js';
 
+const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
+const normalizeCPF = (cpf: string) => {
+  const clean = cpf ? String(cpf).replace(/\D/g, "") : "";
+  return clean.length === 11 ? clean : "00000000000";
+};
+
 async function generateToken() {
   const clientId = process.env.SYNC_CLIENT_ID;
   const clientSecret = process.env.SYNC_CLIENT_SECRET;
@@ -9,45 +15,72 @@ async function generateToken() {
     throw new Error("Configuração de API SyncPayments (SYNC_CLIENT_ID ou SYNC_CLIENT_SECRET) ausente.");
   }
 
-  const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/auth-token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
-  });
+  try {
+    const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/auth-token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Erro ao gerar token SyncPayments:", errorText);
-    throw new Error(`Falha na autenticação SyncPayments: ${response.status} - ${errorText}`);
+    const data = await response.json();
+    
+    if (!response.ok || !data.access_token) {
+      console.error("Erro ao gerar token SyncPayments:", data);
+      throw new Error(data.message || `Falha na autenticação SyncPayments: ${response.status}`);
+    }
+
+    return data.access_token;
+  } catch (error: any) {
+    console.error("Erro crítico na geração de token:", error.message);
+    throw error;
   }
-
-  const data = await response.json();
-  if (!data.access_token) {
-    throw new Error("Resposta da SyncPayments não contém access_token.");
-  }
-
-  return data.access_token;
 }
 
-async function createCashIn(token: string, data: any) {
-  const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
-    method: "POST",
-    headers: {
-      "Accept": "application/json",
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(data)
-  });
+async function createCashIn(token: string, payload: any) {
+  // Validações robustas antes do envio
+  if (!token) throw new Error("Token de autorização ausente");
+  if (!payload.amount || payload.amount <= 0) throw new Error("Valor da transação deve ser positivo");
+  if (!payload.webhook_url) throw new Error("URL de Webhook não configurada no ambiente");
 
-  const json = await response.json();
-  console.log("SYNC FULL RESPONSE:", JSON.stringify(json));
-  return json;
+  console.log("Iniciando Cash-In SyncPayments...");
+  console.log("Payload Enviado:", JSON.stringify(payload, null, 2));
+
+  try {
+    const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+    
+    // Log detalhado para depuração em produção
+    console.log("Resposta Completa SyncPayments:", JSON.stringify(result, null, 2));
+
+    if (!response.ok || result.success === false) {
+      throw new Error(result.message || "Erro retornado pela API SyncPayments");
+    }
+
+    // Extração de dados com fallback seguro
+    const data = result.data || result;
+    return {
+      pix_code: data.pix_code || data.pix_qrcode || data.qrcode || "",
+      paymentCodeBase64: data.paymentCodeBase64 || data.pix_base64 || "",
+      identifier: data.identifier || data.id || ""
+    };
+  } catch (error: any) {
+    console.error("Falha na integração SyncPayments:", error.message);
+    throw error;
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -110,61 +143,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 4. Create Cash-In using the token
-    // SyncPayments usually expects amount in cents (integer)
-    const amountInCents = Math.round(totalAmount * 100);
-
-    const cashInData = {
-      amount: amountInCents,
-      description: `Rifa: ${raffleData.name || "Rifa"} - ${numbers.length} números`,
+    const payload = {
+      amount: Number(totalAmount),
+      description: `Pagamento Rifa: ${raffleData.name || "Sorteio"}`,
       webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
       client: {
         name: buyer.name || "Cliente",
-        cpf: (buyer.cpf || buyer.document || "123.456.789-09").replace(/\D/g, ''),
+        phone: normalizePhone(buyer.whatsapp),
         email: buyer.email || "cliente@exemplo.com",
-        phone: (buyer.whatsapp || "").replace(/\D/g, '')
+        cpf: normalizeCPF(buyer.cpf)
       },
-      split: [], // Ensure split is present as an empty array if not used
       external_id: externalId
     };
 
-    let syncPayData;
+    let syncPayResult;
     try {
-      syncPayData = await createCashIn(accessToken, cashInData);
-      console.log("SYNC FULL RESPONSE:", JSON.stringify(syncPayData, null, 2));
+      syncPayResult = await createCashIn(accessToken, payload);
     } catch (apiError: any) {
-      return res.status(apiError.status || 500).json({
-        error: "Erro ao gerar cobrança na SyncPayments",
-        details: apiError.details || apiError.message
+      return res.status(500).json({
+        error: "Erro ao gerar cobrança PIX",
+        details: apiError.message
       });
     }
 
-    if (!syncPayData) {
-      throw new Error("Falha ao gerar PIX: Resposta vazia da API.");
-    }
-
-    // Handle nested response structure if applicable (some versions return data: { ... })
-    const pixData = syncPayData.data || syncPayData;
-    const qrcode = pixData.pix_qrcode || pixData.qrcode || pixData.pix_code;
-    const copyPaste = pixData.pix_copy_paste || pixData.pix_link || pixData.copy_paste;
+    const { pix_code, paymentCodeBase64, identifier } = syncPayResult;
 
     // 5. Save payment to Firebase
     await paymentRef.set({
       raffleId,
       numbers,
-      buyer,
+      buyer: {
+        ...buyer,
+        phone_normalized: payload.client.phone,
+        cpf_normalized: payload.client.cpf
+      },
       amount: totalAmount,
       status: "pending",
-      syncpay_id: pixData.id || syncPayData.id || null,
-      pix_qrcode: qrcode || null,
-      pix_copy_paste: copyPaste || null,
+      syncpay_id: identifier || null,
+      pix_qrcode: pix_code || null,
+      pix_copy_paste: pix_code || null,
+      paymentCodeBase64: paymentCodeBase64 || null,
       created_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     return res.json({ 
       success: true, 
-      pix_qrcode: qrcode,
-      pix_copy_paste: copyPaste,
-      payment_id: externalId
+      pix_qrcode: pix_code,
+      pix_copy_paste: pix_code,
+      paymentCodeBase64: paymentCodeBase64,
+      payment_id: externalId,
+      identifier: identifier
     });
 
   } catch (error: any) {
