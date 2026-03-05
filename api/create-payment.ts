@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db, admin } from '../firebase-admin';
+import { db, admin } from '../lib/firebase-admin';
 
 async function generateToken() {
   const clientId = process.env.SYNC_CLIENT_ID;

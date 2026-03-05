@@ -1,10 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import dotenv from "dotenv";
-import { db, admin } from "./firebase-admin";
-
-dotenv.config();
+import { db, admin } from "./lib/firebase-admin";
 
 async function generateToken() {
   const clientId = process.env.SYNC_CLIENT_ID;
