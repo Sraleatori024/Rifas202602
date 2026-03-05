@@ -44,6 +44,7 @@ async function createCashIn(token: string, data: any) {
   const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
     method: "POST",
     headers: {
+      "Accept": "application/json",
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
@@ -51,6 +52,11 @@ async function createCashIn(token: string, data: any) {
   });
 
   const responseData = await response.json();
+
+  if (responseData && responseData.version && Object.keys(responseData).length === 1) {
+    console.error("API SyncPayments retornou apenas versão:", responseData);
+    throw new Error("A API retornou uma resposta genérica de versão. Verifique o payload.");
+  }
 
   if (!response.ok) {
     console.error("Erro ao criar Cash-In SyncPayments:", responseData);
@@ -138,8 +144,7 @@ async function startServer() {
         phone: buyer.whatsapp.replace(/\D/g, '')
       },
       split: [],
-      external_id: externalId,
-      payment_method: "pix"
+      external_id: externalId
     };
 
     let syncPayData;
