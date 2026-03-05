@@ -38,13 +38,16 @@ async function createCashIn(token: string, data: any) {
   const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
     method: "POST",
     headers: {
+      "Accept": "application/json",
       "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
+      "Content-Type": "application/json"
     },
-    body: JSON.stringify(data),
+    body: JSON.stringify(data)
   });
 
-  return await response.json();
+  const json = await response.json();
+  console.log("SYNC FULL RESPONSE:", JSON.stringify(json));
+  return json;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
