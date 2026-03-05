@@ -126,51 +126,62 @@ async function startServer() {
       }
 
       // 4. Create Cash-In using the token
-      const cashInData = {
-        amount: totalAmount,
-        description: `Rifa: ${raffleData.name} - ${numbers.length} números`,
-        webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
-        client: {
-          name: buyer.name,
-          cpf: buyer.document || buyer.cpf || "000.000.000-00",
-          email: buyer.email || "cliente@exemplo.com",
-          phone: buyer.whatsapp
-        },
-        split: [],
-        external_id: externalId 
-      };
+    const amountInCents = Math.round(totalAmount * 100);
+    const cashInData = {
+      amount: amountInCents,
+      description: `Rifa: ${raffleData.name} - ${numbers.length} números`,
+      webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
+      client: {
+        name: buyer.name,
+        cpf: (buyer.document || buyer.cpf || "000.000.000-00").replace(/\D/g, ''),
+        email: buyer.email || "cliente@exemplo.com",
+        phone: buyer.whatsapp.replace(/\D/g, '')
+      },
+      split: [],
+      external_id: externalId,
+      payment_method: "pix"
+    };
 
-      let syncPayData;
-      try {
-        syncPayData = await createCashIn(accessToken, cashInData);
-      } catch (apiError: any) {
-        console.error("SyncPayments API Error:", apiError.details || apiError.message);
-        return res.status(apiError.status || 500).json({
-          error: "Erro ao gerar cobrança na SyncPayments",
-          details: apiError.details || apiError.message
-        });
-      }
-
-      // 5. Save pending payment info
-      await paymentRef.set({
-        raffleId,
-        numbers,
-        buyer,
-        amount: totalAmount,
-        status: "pending",
-        syncpay_id: syncPayData.id,
-        pix_qrcode: syncPayData.pix_qrcode,
-        pix_copy_paste: syncPayData.pix_copy_paste,
-        created_at: admin.firestore.FieldValue.serverTimestamp()
+    let syncPayData;
+    try {
+      syncPayData = await createCashIn(accessToken, cashInData);
+      console.log("SYNC FULL RESPONSE:", JSON.stringify(syncPayData, null, 2));
+    } catch (apiError: any) {
+      console.error("SyncPayments API Error:", apiError.details || apiError.message);
+      return res.status(apiError.status || 500).json({
+        error: "Erro ao gerar cobrança na SyncPayments",
+        details: apiError.details || apiError.message
       });
+    }
 
-      // 6. Return PIX data to frontend
-      res.json({ 
-        success: true, 
-        pix_qrcode: syncPayData.pix_qrcode,
-        pix_copy_paste: syncPayData.pix_copy_paste,
-        payment_id: externalId
-      });
+    if (!syncPayData) {
+      throw new Error("Falha ao gerar PIX: Resposta vazia da API.");
+    }
+
+    const pixData = syncPayData.data || syncPayData;
+    const qrcode = pixData.pix_qrcode || pixData.qrcode || pixData.pix_code;
+    const copyPaste = pixData.pix_copy_paste || pixData.pix_link || pixData.copy_paste;
+
+    // 5. Save pending payment info
+    await paymentRef.set({
+      raffleId,
+      numbers,
+      buyer,
+      amount: totalAmount,
+      status: "pending",
+      syncpay_id: pixData.id || syncPayData.id || null,
+      pix_qrcode: qrcode || null,
+      pix_copy_paste: copyPaste || null,
+      created_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 6. Return PIX data to frontend
+    res.json({ 
+      success: true, 
+      pix_qrcode: qrcode,
+      pix_copy_paste: copyPaste,
+      payment_id: externalId
+    });
 
     } catch (error: any) {
       console.error("Erro ao criar pagamento:", error);

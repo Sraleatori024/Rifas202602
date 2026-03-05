@@ -481,9 +481,20 @@ const RaffleDetails = () => {
 
       if (res.ok) {
         const data = await res.json();
+        
+        // Defensive check to ensure we have the required data
+        const qrcode = data.pix_qrcode || data.qrcode || data.pix_code;
+        const copyPaste = data.pix_copy_paste || data.pix_link || data.copy_paste;
+
+        if (!qrcode) {
+          console.error("QR Code não recebido da API:", data);
+          alert("Erro: A API de pagamento não retornou o QR Code. Por favor, tente novamente.");
+          return;
+        }
+
         setPixData({
-          qrcode: data.pix_qrcode,
-          copyPaste: data.pix_copy_paste
+          qrcode: qrcode,
+          copyPaste: copyPaste || ""
         });
         setStep(3);
       } else {
