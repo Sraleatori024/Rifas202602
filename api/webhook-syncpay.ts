@@ -1,23 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import admin from 'firebase-admin';
-
-const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-if (!privateKey) {
-  throw new Error("FIREBASE_PRIVATE_KEY não definida nas variáveis de ambiente.");
-}
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: privateKey,
-    }),
-  });
-}
-
-const db = admin.firestore();
+import { db, admin } from '../firebase-admin';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

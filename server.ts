@@ -2,29 +2,9 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
-import admin from 'firebase-admin';
+import { db, admin } from "./firebase-admin";
 
 dotenv.config();
-
-const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-const projectId = process.env.FIREBASE_PROJECT_ID;
-
-if (!privateKey || !clientEmail || !projectId) {
-  throw new Error("Configuração do Firebase incompleta. Certifique-se de que FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL e FIREBASE_PROJECT_ID estão definidas no painel de Secrets.");
-}
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId,
-      clientEmail,
-      privateKey,
-    }),
-  });
-}
-
-const db = admin.firestore();
 
 async function generateToken() {
   const clientId = process.env.SYNC_CLIENT_ID;
@@ -85,8 +65,6 @@ async function createCashIn(token: string, data: any) {
 
   return responseData;
 }
-
-// Initialize Firebase Admin is now handled at the top of this file
 
 async function startServer() {
   const app = express();
