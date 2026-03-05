@@ -187,20 +187,18 @@ async function startServer() {
         identifier: identifier
       };
 
-      // Salvar registro do pagamento no Firestore (opcional mas recomendado)
-      const paymentRef = db.collection("payments").doc();
-      await paymentRef.set({
-        raffleId,
-        numbers,
-        buyer: {
-          ...buyer,
-          cpf: normalizedCPF,
-          phone: payload.client.phone
-        },
-        amount: totalAmount,
-        status: "pending",
-        syncpay_id: identifier,
+      // Salvar registro do pedido no Firestore
+      const pedidoRef = db.collection("pedidos").doc(identifier);
+      await pedidoRef.set({
+        name: buyer.name,
+        phone: normalizePhone(buyer.whatsapp),
+        cpf: normalizedCPF || buyer.cpf || "",
         pix_code: pix_code,
+        identifier: identifier,
+        status: "pending",
+        numbers: numbers,
+        raffleId: raffleId,
+        amount: totalAmount,
         created_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
@@ -232,28 +230,26 @@ async function startServer() {
     }
 
     try {
-      const paymentRef = db.collection("payments").doc(external_id);
+      const paymentRef = db.collection("pedidos").doc(external_id);
       const paymentSnap = await paymentRef.get();
 
       if (!paymentSnap.exists) {
-        console.error(`Webhook Error: Payment ${external_id} not found in database.`);
-        return res.status(404).json({ error: "Pagamento não encontrado" });
+        console.error(`Webhook Error: Pedido ${external_id} not found in database.`);
+        return res.status(404).json({ error: "Pedido não encontrado" });
       }
 
       if (paymentSnap.data().status === "paid") {
-        console.log(`Webhook: Payment ${external_id} already processed.`);
+        console.log(`Webhook: Pedido ${external_id} already processed.`);
         return res.json({ received: true });
       }
 
-      const { raffleId, numbers, buyer, amount } = paymentSnap.data();
+      const { raffleId, numbers, name, phone, amount } = paymentSnap.data();
 
       const batch = db.batch();
       const raffleRef = db.collection("raffles").doc(raffleId);
       const numbersRef = raffleRef.collection("numbers");
 
       // Update numbers to 'sold'
-      // Note: Firestore 'in' query limit is 30. If numbers > 30, we need to handle it.
-      // For simplicity in this demo, we assume numbers.length <= 30 or we process in chunks.
       const numbersChunks = [];
       for (let i = 0; i < numbers.length; i += 30) {
         numbersChunks.push(numbers.slice(i, i + 30));
@@ -264,9 +260,8 @@ async function startServer() {
         for (const doc of selectedNumbersSnap.docs) {
           batch.update(doc.ref, {
             status: 'sold',
-            buyer_name: buyer.name,
-            buyer_whatsapp: buyer.whatsapp,
-            buyer_instagram: buyer.instagram || null,
+            buyer_name: name,
+            buyer_whatsapp: phone,
             updated_at: admin.firestore.FieldValue.serverTimestamp()
           });
         }
@@ -286,8 +281,10 @@ async function startServer() {
       });
 
       // Associate numbers with user
-      const userRef = db.collection("users").doc(buyer.whatsapp);
+      const userRef = db.collection("users").doc(phone);
       batch.set(userRef, {
+        name: name,
+        whatsapp: phone,
         purchases: admin.firestore.FieldValue.arrayUnion({
           raffleId,
           numbers,
@@ -308,36 +305,40 @@ async function startServer() {
   // Consultar Números
   app.post("/api/consultar-numeros", async (req, res) => {
     const { whatsapp } = req.body;
-    if (!whatsapp) return res.status(400).json({ error: "WhatsApp é obrigatório" });
+    if (!whatsapp) return res.status(400).json({ success: false, message: "WhatsApp é obrigatório" });
 
     try {
-      const userRef = db.collection("users").doc(whatsapp);
-      const userSnap = await userRef.get();
+      const phone = normalizePhone(whatsapp);
+      const snapshot = await db.collection("pedidos")
+        .where("phone", "==", phone)
+        .get();
 
-      if (!userSnap.exists) {
-        return res.status(404).json({ error: "Usuário não encontrado" });
+      if (snapshot.empty) {
+        return res.json({ success: false, message: "Nenhuma compra encontrada" });
       }
 
-      const userData = userSnap.data()!;
-      const purchases = userData.purchases || [];
-      const enrichedPurchases = await Promise.all(purchases.map(async (p: any) => {
-        const raffleSnap = await db.collection("raffles").doc(p.raffleId).get();
-        return {
-          ...p,
-          raffleName: raffleSnap.exists ? raffleSnap.data()?.name : "Rifa Excluída"
-        };
-      }));
+      let allNumbers: number[] = [];
+      let name = "";
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.numbers && Array.isArray(data.numbers)) {
+          allNumbers = [...allNumbers, ...data.numbers];
+        }
+        if (!name && data.name) name = data.name;
+      });
+
+      // Remover duplicatas se houver
+      allNumbers = [...new Set(allNumbers)].sort((a, b) => a - b);
 
       res.json({
         success: true,
-        name: userData.name,
-        whatsapp: userData.whatsapp,
-        instagram: userData.instagram,
-        purchases: enrichedPurchases
+        numbers: allNumbers,
+        name: name
       });
     } catch (error) {
       console.error("Consult Error:", error);
-      res.status(500).json({ error: "Erro ao consultar números." });
+      res.status(500).json({ success: false, message: "Erro ao consultar números." });
     }
   });
 

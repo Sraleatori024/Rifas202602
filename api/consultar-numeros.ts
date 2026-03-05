@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, admin } from '../lib/firebase-admin.js';
 
+const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -9,40 +11,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { whatsapp } = req.body;
 
   if (!whatsapp) {
-    return res.status(400).json({ error: "WhatsApp é obrigatório" });
+    return res.status(400).json({ success: false, message: "WhatsApp é obrigatório" });
   }
 
   try {
-    const userRef = db.collection("users").doc(whatsapp);
-    const userSnap = await userRef.get();
+    const phone = normalizePhone(whatsapp);
+    const snapshot = await db.collection("pedidos")
+      .where("phone", "==", phone)
+      .get();
 
-    if (!userSnap.exists) {
-      return res.status(404).json({ error: "Usuário não encontrado" });
+    if (snapshot.empty) {
+      return res.json({ success: false, message: "Nenhuma compra encontrada" });
     }
 
-    const userData = userSnap.data()!;
-    
-    // Fetch raffle names for better UX
-    const purchases = userData.purchases || [];
-    const enrichedPurchases = await Promise.all(purchases.map(async (p: any) => {
-      const raffleRef = db.collection("raffles").doc(p.raffleId);
-      const raffleSnap = await raffleRef.get();
-      return {
-        ...p,
-        raffleName: raffleSnap.exists ? raffleSnap.data()?.name : "Rifa Excluída"
-      };
-    }));
+    let allNumbers: number[] = [];
+    let name = "";
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.numbers && Array.isArray(data.numbers)) {
+        allNumbers = [...allNumbers, ...data.numbers];
+      }
+      if (!name && data.name) name = data.name;
+    });
+
+    // Remover duplicatas se houver
+    allNumbers = [...new Set(allNumbers)].sort((a, b) => a - b);
 
     res.json({
       success: true,
-      name: userData.name,
-      whatsapp: userData.whatsapp,
-      instagram: userData.instagram,
-      purchases: enrichedPurchases
+      numbers: allNumbers,
+      name: name
     });
 
   } catch (error) {
     console.error("Consult Error:", error);
-    res.status(500).json({ error: "Erro ao consultar números." });
+    res.status(500).json({ success: false, message: "Erro ao consultar números." });
   }
 }

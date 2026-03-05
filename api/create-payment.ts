@@ -127,10 +127,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const unitPrice = raffleData.price || 0;
     const totalAmount = numbers.length * unitPrice;
 
-    // 2. Create a pending payment record
-    const paymentRef = db.collection("payments").doc();
-    const externalId = paymentRef.id;
-
     // 3. Get Auth Token from SyncPayments
     let accessToken;
     try {
@@ -152,8 +148,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         phone: normalizePhone(buyer.whatsapp),
         email: buyer.email || "cliente@exemplo.com",
         cpf: normalizeCPF(buyer.cpf)
-      },
-      external_id: externalId
+      }
     };
 
     let syncPayResult;
@@ -168,30 +163,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { pix_code, paymentCodeBase64, identifier } = syncPayResult;
 
-    // 5. Save payment to Firebase
-    await paymentRef.set({
-      raffleId,
-      numbers,
-      buyer: {
-        ...buyer,
-        phone_normalized: payload.client.phone,
-        cpf_normalized: payload.client.cpf
-      },
-      amount: totalAmount,
+    // 5. Save pedido to Firebase
+    const pedidoRef = db.collection("pedidos").doc(identifier);
+    await pedidoRef.set({
+      name: buyer.name || "Cliente",
+      phone: normalizePhone(buyer.whatsapp),
+      cpf: payload.client.cpf,
+      pix_code: pix_code,
+      identifier: identifier,
       status: "pending",
-      syncpay_id: identifier || null,
-      pix_qrcode: pix_code || null,
-      pix_copy_paste: pix_code || null,
-      paymentCodeBase64: paymentCodeBase64 || null,
+      numbers: numbers,
+      raffleId: raffleId,
+      amount: totalAmount,
       created_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     return res.json({ 
       success: true, 
-      pix_qrcode: pix_code,
-      pix_copy_paste: pix_code,
-      paymentCodeBase64: paymentCodeBase64,
-      payment_id: externalId,
+      pix_code: pix_code,
       identifier: identifier
     });
 

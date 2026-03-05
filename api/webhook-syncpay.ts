@@ -13,14 +13,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const paymentRef = db.collection("payments").doc(external_id);
+    const paymentRef = db.collection("pedidos").doc(external_id);
     const paymentSnap = await paymentRef.get();
 
     if (!paymentSnap.exists || paymentSnap.data()?.status === "paid") {
       return res.json({ received: true });
     }
 
-    const { raffleId, numbers, buyer, amount } = paymentSnap.data()!;
+    const { raffleId, numbers, name, phone, amount } = paymentSnap.data()!;
 
     const batch = db.batch();
     const raffleRef = db.collection("raffles").doc(raffleId);
@@ -31,9 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const docSnap of selectedNumbersSnap.docs) {
       batch.update(docSnap.ref, {
         status: 'sold',
-        buyer_name: buyer.name,
-        buyer_whatsapp: buyer.whatsapp,
-        buyer_instagram: buyer.instagram || null,
+        buyer_name: name,
+        buyer_whatsapp: phone,
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
     }
@@ -50,8 +49,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     // Associate numbers with user
-    const userRef = db.collection("users").doc(buyer.whatsapp);
+    const userRef = db.collection("users").doc(phone);
     batch.set(userRef, {
+      name: name,
+      whatsapp: phone,
       purchases: admin.firestore.FieldValue.arrayUnion({
         raffleId,
         numbers,

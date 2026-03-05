@@ -64,16 +64,17 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
     setConsulting(true);
     setConsultResult(null);
     try {
+      const normalizedPhone = phone.replace(/\D/g, '');
       const res = await fetch('/api/consultar-numeros', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ whatsapp: phone })
+        body: JSON.stringify({ whatsapp: normalizedPhone })
       });
       const data = await res.json();
-      if (res.ok) {
+      if (data.success) {
         setConsultResult(data);
       } else {
-        alert(data.error || "Erro ao consultar.");
+        alert(data.message || "Nenhuma compra encontrada");
       }
     } catch (err: any) {
       console.error("Erro de conexão:", err);
@@ -221,25 +222,17 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                     </div>
 
                     <div className="space-y-3">
-                      <p className="text-xs text-slate-500 font-bold uppercase">Suas Participações</p>
-                      {consultResult.purchases.length === 0 ? (
-                        <p className="text-sm text-slate-400 italic">Nenhuma compra confirmada ainda.</p>
+                      <p className="text-xs text-slate-500 font-bold uppercase">Seus Números Comprados</p>
+                      {consultResult.numbers.length === 0 ? (
+                        <p className="text-sm text-slate-400 italic">Nenhum número encontrado.</p>
                       ) : (
-                        consultResult.purchases.map((p: any, idx: number) => (
-                          <div key={idx} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-2">
-                            <div className="flex justify-between items-start">
-                              <p className="font-bold text-slate-900 text-sm">{p.raffleName}</p>
-                              <span className="text-[10px] text-slate-400">{new Date(p.paid_at).toLocaleDateString()}</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {p.numbers.map((n: number) => (
-                                <span key={n} className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold rounded">
-                                  {n.toString().padStart(2, '0')}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ))
+                        <div className="flex flex-wrap gap-2">
+                          {consultResult.numbers.map((n: number) => (
+                            <span key={n} className="px-3 py-1 bg-primary/10 text-primary text-sm font-bold rounded-lg border border-primary/20">
+                              {n.toString().padStart(2, '0')}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -482,24 +475,17 @@ const RaffleDetails = () => {
       if (res.ok) {
         const data = await res.json();
         
-        // Defensive check to ensure we have the required data
-        const qrcode = data.pix_qrcode || data.qrcode || data.pix_code;
-        const copyPaste = data.pix_copy_paste || data.pix_link || data.copy_paste;
-
-        if (!qrcode) {
-          console.error("QR Code não recebido da API:", data);
-          alert("Erro: A API de pagamento não retornou o QR Code. Por favor, tente novamente.");
-          return;
-        }
+        const pixCode = data.pix_code;
+        const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
 
         setPixData({
-          qrcode: qrcode,
-          copyPaste: copyPaste || ""
+          qrcode: qrImage,
+          copyPaste: pixCode
         });
         setStep(3);
       } else {
         const error = await res.json();
-        alert(error.error || "Erro ao processar compra.");
+        alert(error.message || error.error || "Erro ao processar compra.");
       }
     } catch (err: any) {
       console.error("Erro ao processar compra:", err);
@@ -685,7 +671,7 @@ const RaffleDetails = () => {
               {pixData && (
                 <div className="space-y-6 mb-8">
                   <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm inline-block mx-auto">
-                    <img src={pixData.qrcode} alt="PIX QR Code" className="w-48 h-48 mx-auto" />
+                    <img id="pix-qrcode" src={pixData.qrcode} alt="PIX QR Code" className="w-48 h-48 mx-auto" />
                   </div>
                   
                   <div className="space-y-2">
