@@ -115,26 +115,23 @@ async function startServer() {
       }
 
       // 4. Create Cash-In using the token
-    const amountInCents = Math.round(totalAmount * 100);
-    const cashInData = {
-      amount: amountInCents,
-      description: `Rifa: ${raffleData.name} - ${numbers.length} números`,
-      webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
-      client: {
-        name: buyer.name,
-        cpf: (buyer.document || buyer.cpf || "123.456.789-09").replace(/\D/g, ''),
-        email: buyer.email || "cliente@exemplo.com",
-        phone: buyer.whatsapp.replace(/\D/g, '')
-      },
-      split: [],
-      external_id: externalId
-    };
+      const data = {
+        amount: Number(totalAmount),
+        description: "Teste PIX",
+        webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
+        client: {
+          name: buyer.name || "Cliente",
+          phone: buyer.whatsapp,
+          email: buyer.email || "cliente@exemplo.com",
+          cpf: "00000000000"
+        }
+      };
 
-    let syncPayData;
-    try {
-      syncPayData = await createCashIn(accessToken, cashInData);
-      console.log("SYNC FULL RESPONSE:", JSON.stringify(syncPayData, null, 2));
-    } catch (apiError: any) {
+      let syncPayData;
+      try {
+        syncPayData = await createCashIn(accessToken, data);
+        console.log("SYNC FULL RESPONSE:", JSON.stringify(syncPayData, null, 2));
+      } catch (apiError: any) {
       console.error("SyncPayments API Error:", apiError.details || apiError.message);
       return res.status(apiError.status || 500).json({
         error: "Erro ao gerar cobrança na SyncPayments",
