@@ -66,20 +66,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { raffleId, numbers, buyer } = req.body;
-
-  if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
-    return res.status(400).json({ error: "Dados incompletos (Nome e WhatsApp são obrigatórios)" });
-  }
-
   try {
+    if (!req.body) {
+      return res.status(400).json({ error: "Body vazio." });
+    }
+
+    const { raffleId, numbers, buyer } = req.body;
+
+    if (!raffleId || !numbers || !buyer) {
+      return res.status(400).json({ error: "Dados da requisição inválidos." });
+    }
+
+    if (!buyer.whatsapp) {
+      return res.status(400).json({ error: "WhatsApp do comprador inválido." });
+    }
+
     // 1. Handle User (Simple System)
     const userRef = db.collection("users").doc(buyer.whatsapp);
     const userSnap = await userRef.get();
     
     if (!userSnap.exists) {
       await userRef.set({
-        name: buyer.name,
+        name: buyer.name || "Cliente",
         whatsapp: buyer.whatsapp,
         instagram: buyer.instagram || "",
         created_at: admin.firestore.FieldValue.serverTimestamp()
@@ -114,16 +122,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 4. Create Cash-In using the token
     const cashInData = {
-      amount: totalAmount,
-      description: `Rifa: ${raffleData.name} - ${numbers.length} números`,
+      amount: Number(totalAmount),
+      description: `Rifa: ${raffleData.name || "Rifa"} - ${numbers.length} números`,
       webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
       client: {
-        name: buyer.name,
-        cpf: buyer.document || buyer.cpf || "000.000.000-00",
+        name: buyer.name || "Cliente",
+        phone: buyer.whatsapp,
         email: buyer.email || "cliente@exemplo.com",
-        phone: buyer.whatsapp
+        cpf: buyer.cpf || buyer.document || "000.000.000-00"
       },
-      split: [], // Added split field as requested in structure
       external_id: externalId 
     };
 
@@ -137,6 +144,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    if (!syncPayData) {
+      throw new Error("Falha ao gerar PIX: Resposta vazia da API.");
+    }
+
     // 5. Save payment to Firebase
     await paymentRef.set({
       raffleId,
@@ -144,13 +155,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       buyer,
       amount: totalAmount,
       status: "pending",
-      syncpay_id: syncPayData.id,
-      pix_qrcode: syncPayData.pix_qrcode,
-      pix_copy_paste: syncPayData.pix_copy_paste,
+      syncpay_id: syncPayData.id || null,
+      pix_qrcode: syncPayData.pix_qrcode || null,
+      pix_copy_paste: syncPayData.pix_copy_paste || null,
       created_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    res.json({ 
+    return res.json({ 
       success: true, 
       pix_qrcode: syncPayData.pix_qrcode,
       pix_copy_paste: syncPayData.pix_copy_paste,
@@ -159,7 +170,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (error: any) {
     console.error("Error in create-payment:", error);
-    res.status(500).json({ error: "Erro interno ao processar pagamento.", details: error.message });
+    return res.status(500).json({ 
+      error: "Erro interno ao processar pagamento.", 
+      details: error.message 
+    });
   }
 }
 
