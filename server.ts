@@ -4,12 +4,22 @@ import path from "path";
 import dotenv from "dotenv";
 import admin from 'firebase-admin';
 
+dotenv.config();
+
+const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const projectId = process.env.FIREBASE_PROJECT_ID;
+
+if (!privateKey || !clientEmail || !projectId) {
+  throw new Error("Configuração do Firebase incompleta. Certifique-se de que FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL e FIREBASE_PROJECT_ID estão definidas no painel de Secrets.");
+}
+
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+      projectId,
+      clientEmail,
+      privateKey,
     }),
   });
 }
@@ -76,9 +86,7 @@ async function createCashIn(token: string, data: any) {
   return responseData;
 }
 
-dotenv.config();
-
-// Initialize Firebase Admin is now handled in lib/firebase-admin.ts
+// Initialize Firebase Admin is now handled at the top of this file
 
 async function startServer() {
   const app = express();

@@ -1,12 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import admin from 'firebase-admin';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const projectId = process.env.FIREBASE_PROJECT_ID;
+
+if (!privateKey || !clientEmail || !projectId) {
+  throw new Error("Configuração do Firebase incompleta. Certifique-se de que FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL e FIREBASE_PROJECT_ID estão definidas no painel de Secrets.");
+}
 
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+      projectId,
+      clientEmail,
+      privateKey,
     }),
   });
 }
