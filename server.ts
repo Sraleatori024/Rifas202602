@@ -119,7 +119,7 @@ async function startServer() {
       webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
       client: {
         name: buyer.name,
-        cpf: (buyer.document || buyer.cpf || "000.000.000-00").replace(/\D/g, ''),
+        cpf: (buyer.document || buyer.cpf || "123.456.789-09").replace(/\D/g, ''),
         email: buyer.email || "cliente@exemplo.com",
         phone: buyer.whatsapp.replace(/\D/g, '')
       },

@@ -116,7 +116,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
       client: {
         name: buyer.name || "Cliente",
-        cpf: (buyer.cpf || buyer.document || "000.000.000-00").replace(/\D/g, ''),
+        cpf: (buyer.cpf || buyer.document || "123.456.789-09").replace(/\D/g, ''),
         email: buyer.email || "cliente@exemplo.com",
         phone: (buyer.whatsapp || "").replace(/\D/g, '')
       },
