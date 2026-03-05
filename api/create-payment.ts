@@ -121,22 +121,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 4. Create Cash-In using the token
+    // SyncPayments usually expects amount in cents (integer)
+    const amountInCents = Math.round(totalAmount * 100);
+
     const cashInData = {
-      amount: Number(totalAmount),
+      amount: amountInCents,
       description: `Rifa: ${raffleData.name || "Rifa"} - ${numbers.length} números`,
       webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
       client: {
         name: buyer.name || "Cliente",
         phone: buyer.whatsapp,
         email: buyer.email || "cliente@exemplo.com",
-        cpf: buyer.cpf || buyer.document || "000.000.000-00"
+        cpf: (buyer.cpf || buyer.document || "000.000.000-00").replace(/\D/g, '')
       },
-      external_id: externalId 
+      external_id: externalId,
+      payment_method: "pix" // Explicitly set payment method if required
     };
 
     let syncPayData;
     try {
       syncPayData = await createCashIn(accessToken, cashInData);
+      console.log("SYNC FULL RESPONSE:", JSON.stringify(syncPayData, null, 2));
     } catch (apiError: any) {
       return res.status(apiError.status || 500).json({
         error: "Erro ao gerar cobrança na SyncPayments",
@@ -148,6 +153,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error("Falha ao gerar PIX: Resposta vazia da API.");
     }
 
+    // Handle nested response structure if applicable (some versions return data: { ... })
+    const pixData = syncPayData.data || syncPayData;
+    const qrcode = pixData.pix_qrcode || pixData.qrcode || pixData.pix_code;
+    const copyPaste = pixData.pix_copy_paste || pixData.pix_link || pixData.copy_paste;
+
     // 5. Save payment to Firebase
     await paymentRef.set({
       raffleId,
@@ -155,16 +165,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       buyer,
       amount: totalAmount,
       status: "pending",
-      syncpay_id: syncPayData.id || null,
-      pix_qrcode: syncPayData.pix_qrcode || null,
-      pix_copy_paste: syncPayData.pix_copy_paste || null,
+      syncpay_id: pixData.id || syncPayData.id || null,
+      pix_qrcode: qrcode || null,
+      pix_copy_paste: copyPaste || null,
       created_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     return res.json({ 
       success: true, 
-      pix_qrcode: syncPayData.pix_qrcode,
-      pix_copy_paste: syncPayData.pix_copy_paste,
+      pix_qrcode: qrcode,
+      pix_copy_paste: copyPaste,
       payment_id: externalId
     });
 
