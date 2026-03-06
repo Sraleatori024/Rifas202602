@@ -195,45 +195,68 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                 <button onClick={() => setShowConsult(false)} className="text-slate-400 hover:text-slate-600"><X /></button>
               </div>
               <div className="p-6 space-y-6">
-                <form onSubmit={handleConsult} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Seu WhatsApp</label>
-                    <div className="flex gap-2">
-                      <input 
-                        type="tel" 
-                        required
-                        value={phone}
-                        onChange={e => setPhone(e.target.value)}
-                        className="flex-1 px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        placeholder="(00) 00000-0000"
-                      />
-                      <button type="submit" disabled={consulting} className="btn-primary px-6">
-                        {consulting ? '...' : 'Buscar'}
+                {!consultResult ? (
+                  <form onSubmit={handleConsult} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Seu WhatsApp</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="tel" 
+                          required
+                          value={phone}
+                          onChange={e => setPhone(e.target.value)}
+                          className="flex-1 px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          placeholder="(00) 00000-0000"
+                        />
+                        <button type="submit" disabled={consulting} className="btn-primary px-6">
+                          {consulting ? '...' : 'Buscar'}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <p className="text-xs text-slate-500 font-bold uppercase">Telefone consultado</p>
+                        <p className="font-bold text-slate-900">{phone}</p>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <p className="text-xs text-slate-500 font-bold uppercase">Nome</p>
+                        <p className="font-bold text-slate-900">{consultResult.name}</p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <p className="text-xs text-slate-500 font-bold uppercase">Números encontrados</p>
+                        {consultResult.numbers.length === 0 ? (
+                          <p className="text-sm text-slate-400 italic">Nenhum número encontrado.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {consultResult.numbers.map((n: number) => (
+                              <span key={n} className="px-3 py-1 bg-primary/10 text-primary text-sm font-bold rounded-lg border border-primary/20">
+                                {n.toString().padStart(2, '0')}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 pt-4 border-t border-slate-100">
+                      <button 
+                        onClick={() => setShowConsult(false)} 
+                        className="btn-primary w-full py-3 flex items-center justify-center gap-2"
+                      >
+                        <Ticket className="w-4 h-4" />
+                        Voltar para a rifa
                       </button>
-                    </div>
-                  </div>
-                </form>
-
-                {consultResult && (
-                  <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p className="text-xs text-slate-500 font-bold uppercase">Nome</p>
-                      <p className="font-bold text-slate-900">{consultResult.name}</p>
-                    </div>
-
-                    <div className="space-y-3">
-                      <p className="text-xs text-slate-500 font-bold uppercase">Seus Números Comprados</p>
-                      {consultResult.numbers.length === 0 ? (
-                        <p className="text-sm text-slate-400 italic">Nenhum número encontrado.</p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {consultResult.numbers.map((n: number) => (
-                            <span key={n} className="px-3 py-1 bg-primary/10 text-primary text-sm font-bold rounded-lg border border-primary/20">
-                              {n.toString().padStart(2, '0')}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <button 
+                        onClick={() => { setConsultResult(null); setPhone(''); }} 
+                        className="w-full py-2 text-sm font-bold text-slate-500 hover:text-primary transition-colors"
+                      >
+                        Consultar outro número
+                      </button>
                     </div>
                   </div>
                 )}
