@@ -188,18 +188,18 @@ async function startServer() {
       };
 
       // Salvar registro do pedido no Firestore
-      const pedidoRef = db.collection("pedidos").doc(identifier);
-      await pedidoRef.set({
-        name: buyer.name,
-        phone: normalizePhone(buyer.whatsapp),
+      const compraRef = db.collection("compras").doc(identifier);
+      await compraRef.set({
+        nome: buyer.name,
+        telefone: normalizePhone(buyer.whatsapp),
         cpf: normalizedCPF || buyer.cpf || "",
         pix_code: pix_code,
         identifier: identifier,
         status: "pending",
-        numbers: numbers,
-        raffleId: raffleId,
-        amount: totalAmount,
-        created_at: admin.firestore.FieldValue.serverTimestamp()
+        numero: numbers,
+        rifaId: raffleId,
+        valor: totalAmount,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
       res.json(responseData);
@@ -230,29 +230,29 @@ async function startServer() {
     }
 
     try {
-      const paymentRef = db.collection("pedidos").doc(external_id);
+      const paymentRef = db.collection("compras").doc(external_id);
       const paymentSnap = await paymentRef.get();
 
       if (!paymentSnap.exists) {
-        console.error(`Webhook Error: Pedido ${external_id} not found in database.`);
-        return res.status(404).json({ error: "Pedido não encontrado" });
+        console.error(`Webhook Error: Compra ${external_id} not found in database.`);
+        return res.status(404).json({ error: "Compra não encontrada" });
       }
 
       if (paymentSnap.data().status === "paid") {
-        console.log(`Webhook: Pedido ${external_id} already processed.`);
+        console.log(`Webhook: Compra ${external_id} already processed.`);
         return res.json({ received: true });
       }
 
-      const { raffleId, numbers, name, phone, amount } = paymentSnap.data();
+      const { rifaId, numero, nome, telefone, valor } = paymentSnap.data();
 
       const batch = db.batch();
-      const raffleRef = db.collection("raffles").doc(raffleId);
+      const raffleRef = db.collection("raffles").doc(rifaId);
       const numbersRef = raffleRef.collection("numbers");
 
       // Update numbers to 'sold'
       const numbersChunks = [];
-      for (let i = 0; i < numbers.length; i += 30) {
-        numbersChunks.push(numbers.slice(i, i + 30));
+      for (let i = 0; i < numero.length; i += 30) {
+        numbersChunks.push(numero.slice(i, i + 30));
       }
 
       for (const chunk of numbersChunks) {
@@ -260,8 +260,8 @@ async function startServer() {
         for (const doc of selectedNumbersSnap.docs) {
           batch.update(doc.ref, {
             status: 'sold',
-            buyer_name: name,
-            buyer_whatsapp: phone,
+            buyer_name: nome,
+            buyer_whatsapp: telefone,
             updated_at: admin.firestore.FieldValue.serverTimestamp()
           });
         }
@@ -269,8 +269,8 @@ async function startServer() {
 
       // Update raffle stats
       batch.update(raffleRef, {
-        sold_count: admin.firestore.FieldValue.increment(numbers.length),
-        revenue: admin.firestore.FieldValue.increment(amount),
+        sold_count: admin.firestore.FieldValue.increment(numero.length),
+        revenue: admin.firestore.FieldValue.increment(valor),
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
@@ -281,19 +281,19 @@ async function startServer() {
       });
 
       // Associate numbers with user
-      const userRef = db.collection("users").doc(phone);
+      const userRef = db.collection("users").doc(telefone);
       batch.set(userRef, {
-        name: name,
-        whatsapp: phone,
+        name: nome,
+        whatsapp: telefone,
         purchases: admin.firestore.FieldValue.arrayUnion({
-          raffleId,
-          numbers,
+          rifaId,
+          numero,
           paid_at: new Date().toISOString()
         })
       }, { merge: true });
 
       await batch.commit();
-      console.log(`Payment ${external_id} processed successfully. Numbers: ${numbers.join(', ')}`);
+      console.log(`Payment ${external_id} processed successfully. Numbers: ${numero.join(', ')}`);
       res.json({ success: true });
 
     } catch (error: any) {
@@ -309,8 +309,8 @@ async function startServer() {
 
     try {
       const phone = normalizePhone(whatsapp);
-      const snapshot = await db.collection("pedidos")
-        .where("phone", "==", phone)
+      const snapshot = await db.collection("compras")
+        .where("telefone", "==", phone)
         .get();
 
       if (snapshot.empty) {
@@ -322,10 +322,10 @@ async function startServer() {
 
       snapshot.forEach(doc => {
         const data = doc.data();
-        if (data.numbers && Array.isArray(data.numbers)) {
-          allNumbers = [...allNumbers, ...data.numbers];
+        if (data.numero && Array.isArray(data.numero)) {
+          allNumbers = [...allNumbers, ...data.numero];
         }
-        if (!name && data.name) name = data.name;
+        if (!name && data.nome) name = data.nome;
       });
 
       // Remover duplicatas se houver

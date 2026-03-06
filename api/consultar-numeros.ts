@@ -16,8 +16,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const phone = normalizePhone(whatsapp);
-    const snapshot = await db.collection("pedidos")
-      .where("phone", "==", phone)
+    const snapshot = await db.collection("compras")
+      .where("telefone", "==", phone)
       .get();
 
     if (snapshot.empty) {
@@ -29,10 +29,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     snapshot.forEach(doc => {
       const data = doc.data();
-      if (data.numbers && Array.isArray(data.numbers)) {
-        allNumbers = [...allNumbers, ...data.numbers];
+      if (data.numero && Array.isArray(data.numero)) {
+        allNumbers = [...allNumbers, ...data.numero];
       }
-      if (!name && data.name) name = data.name;
+      if (!name && data.nome) name = data.nome;
     });
 
     // Remover duplicatas se houver

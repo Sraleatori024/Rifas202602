@@ -876,6 +876,12 @@ const AdminDashboard = () => {
   });
   const [creating, setCreating] = useState(false);
 
+  const [compras, setCompras] = useState<any[]>([]);
+  const [globalStats, setGlobalStats] = useState({
+    totalRevenue: 0,
+    activeCustomers: 0
+  });
+
   useEffect(() => {
     const q = query(collection(db, "raffles"), orderBy("created_at", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -885,6 +891,33 @@ const AdminDashboard = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, "compras"), where("status", "==", "paid"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const comprasData = snapshot.docs.map(d => d.data());
+      setCompras(comprasData);
+      
+      const totalRevenue = comprasData.reduce((acc, curr) => acc + (curr.valor || 0), 0);
+      const uniqueCustomers = new Set(comprasData.map(c => c.telefone || c.cpf)).size;
+      
+      setGlobalStats({
+        totalRevenue,
+        activeCustomers: uniqueCustomers
+      });
+    }, (error) => {
+      console.error("Admin dashboard compras error:", error);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const getRaffleStats = (raffleId: string) => {
+    const raffleCompras = compras.filter(c => c.rifaId === raffleId);
+    const revenue = raffleCompras.reduce((acc, curr) => acc + (curr.valor || 0), 0);
+    const soldNumbers = raffleCompras.reduce((acc, curr) => acc + (curr.numero?.length || 0), 0);
+    const uniqueCustomers = new Set(raffleCompras.map(c => c.telefone || c.cpf)).size;
+    return { revenue, soldNumbers, uniqueCustomers };
+  };
 
   const handleEdit = (raffle: Raffle) => {
     setEditingId(raffle.id);
@@ -1129,7 +1162,7 @@ const AdminDashboard = () => {
           </div>
           <div>
             <p className="text-sm text-slate-500 font-bold uppercase">Arrecadação Total</p>
-            <p className="text-2xl font-black text-slate-900">R$ 0,00</p>
+            <p className="text-2xl font-black text-slate-900">R$ {globalStats.totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
           </div>
         </div>
         <div className="card p-6 flex items-center gap-4">
@@ -1138,7 +1171,7 @@ const AdminDashboard = () => {
           </div>
           <div>
             <p className="text-sm text-slate-500 font-bold uppercase">Clientes Ativos</p>
-            <p className="text-2xl font-black text-slate-900">0</p>
+            <p className="text-2xl font-black text-slate-900">{globalStats.activeCustomers}</p>
           </div>
         </div>
       </div>
@@ -1148,53 +1181,75 @@ const AdminDashboard = () => {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Rifa</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Valor</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vendas</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Arrecadação</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Clientes</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {raffles.map(raffle => (
-              <tr key={raffle.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <img src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} className="w-10 h-10 rounded-lg object-cover" />
-                    <div>
-                      <p className="font-bold text-slate-900">{raffle.name}</p>
-                      <p className="text-xs text-slate-500">{raffle.total_numbers} números</p>
+            {raffles.map(raffle => {
+              const raffleStats = getRaffleStats(raffle.id);
+              return (
+                <tr key={raffle.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <img src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} className="w-10 h-10 rounded-lg object-cover" />
+                      <div>
+                        <p className="font-bold text-slate-900">{raffle.name}</p>
+                        <p className="text-xs text-slate-500">{raffle.total_numbers} números</p>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 font-medium text-slate-700">R$ {raffle.price.toFixed(2)}</td>
-                <td className="px-6 py-4">
-                  <span className={cn(
-                    "px-2 py-1 rounded-full text-xs font-bold",
-                    raffle.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-                  )}>
-                    {raffle.active ? 'Ativa' : 'Inativa'}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex gap-2">
-                    <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Editar"><Settings className="w-4 h-4" /></button>
-                    <button 
-                      onClick={() => handleDraw(raffle)} 
-                      className={cn(
-                        "p-2 transition-colors",
-                        isGoalMet(raffle) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900">{raffleStats.soldNumbers}</span>
+                      <span className="text-[10px] text-slate-400 uppercase">Números vendidos</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-primary">R$ {raffleStats.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-[10px] text-slate-400 uppercase">Total arrecadado</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-700">{raffleStats.uniqueCustomers}</span>
+                      <span className="text-[10px] text-slate-400 uppercase">Clientes únicos</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={cn(
+                      "px-2 py-1 rounded-full text-xs font-bold",
+                      raffle.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                    )}>
+                      {raffle.active ? 'Ativa' : 'Inativa'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex gap-2">
+                      <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Editar"><Settings className="w-4 h-4" /></button>
+                      <button 
+                        onClick={() => handleDraw(raffle)} 
+                        className={cn(
+                          "p-2 transition-colors",
+                          isGoalMet(raffle) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
+                        )}
+                        title={isGoalMet(raffle) ? "Sortear" : "Meta não atingida"}
+                      >
+                        <Trophy className="w-4 h-4" />
+                      </button>
+                      {!isGoalMet(raffle) && (
+                        <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
                       )}
-                      title={isGoalMet(raffle) ? "Sortear" : "Meta não atingida"}
-                    >
-                      <Trophy className="w-4 h-4" />
-                    </button>
-                    {!isGoalMet(raffle) && (
-                      <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
-                    )}
-                    <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

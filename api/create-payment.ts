@@ -163,19 +163,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { pix_code, paymentCodeBase64, identifier } = syncPayResult;
 
-    // 5. Save pedido to Firebase
-    const pedidoRef = db.collection("pedidos").doc(identifier);
-    await pedidoRef.set({
-      name: buyer.name || "Cliente",
-      phone: normalizePhone(buyer.whatsapp),
+    // 5. Save compra to Firebase
+    const compraRef = db.collection("compras").doc(identifier);
+    await compraRef.set({
+      nome: buyer.name || "Cliente",
+      telefone: normalizePhone(buyer.whatsapp),
       cpf: payload.client.cpf,
       pix_code: pix_code,
       identifier: identifier,
       status: "pending",
-      numbers: numbers,
-      raffleId: raffleId,
-      amount: totalAmount,
-      created_at: admin.firestore.FieldValue.serverTimestamp()
+      numero: numbers,
+      rifaId: raffleId,
+      valor: totalAmount,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     return res.json({ 
