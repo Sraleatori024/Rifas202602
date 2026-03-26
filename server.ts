@@ -1,8 +1,12 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { fileURLToPath } from "url";
 import QRCode from "qrcode";
-import { db, admin } from "./lib/firebase-admin.js";
+import { getDb, admin } from "./lib/firebase-admin.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 3) Corrigir telefone para remover () e espaços
 const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
@@ -116,7 +120,7 @@ async function startServer() {
 
     try {
       // 1. Buscar dados da rifa para calcular valor
-      const raffleRef = db.collection("raffles").doc(raffleId);
+      const raffleRef = getDb().collection("raffles").doc(raffleId);
       const raffleSnap = await raffleRef.get();
       
       if (!raffleSnap.exists) {
@@ -188,7 +192,7 @@ async function startServer() {
       };
 
       // Salvar registro do pedido no Firestore
-      const compraRef = db.collection("compras").doc(identifier);
+      const compraRef = getDb().collection("compras").doc(identifier);
       await compraRef.set({
         nome: buyer.name,
         telefone: normalizePhone(buyer.whatsapp),
@@ -230,7 +234,7 @@ async function startServer() {
     }
 
     try {
-      const paymentRef = db.collection("compras").doc(external_id);
+      const paymentRef = getDb().collection("compras").doc(external_id);
       const paymentSnap = await paymentRef.get();
 
       if (!paymentSnap.exists) {
@@ -245,8 +249,8 @@ async function startServer() {
 
       const { rifaId, numero, nome, telefone, valor } = paymentSnap.data();
 
-      const batch = db.batch();
-      const raffleRef = db.collection("raffles").doc(rifaId);
+      const batch = getDb().batch();
+      const raffleRef = getDb().collection("raffles").doc(rifaId);
       const numbersRef = raffleRef.collection("numbers");
 
       // Update numbers to 'sold'
@@ -281,7 +285,7 @@ async function startServer() {
       });
 
       // Associate numbers with user
-      const userRef = db.collection("users").doc(telefone);
+      const userRef = getDb().collection("users").doc(telefone);
       batch.set(userRef, {
         name: nome,
         whatsapp: telefone,
@@ -309,7 +313,7 @@ async function startServer() {
 
     try {
       const phone = normalizePhone(whatsapp);
-      const snapshot = await db.collection("compras")
+      const snapshot = await getDb().collection("compras")
         .where("telefone", "==", phone)
         .get();
 
