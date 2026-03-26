@@ -843,88 +843,96 @@ const RaffleDetails = () => {
 
         {/* Right Column: Checkout Summary */}
         <div className="lg:col-span-1">
-          <div className="card p-6 sticky top-24">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <div className="card p-6 sticky top-24 flex flex-col max-h-[calc(100vh-120px)]">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2 shrink-0">
               <CreditCard className="text-primary w-5 h-5" />
               Resumo da Compra
             </h3>
             
-            <div className="space-y-4 mb-6">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Números selecionados:</span>
-                <span className="font-bold text-slate-900">{selectedNumbers.length}</span>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {selectedNumbers.map(n => (
-                  <span key={n} className="px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded">
-                    {n.toString().padStart(2, '0')}
-                  </span>
-                ))}
-              </div>
-              <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
-                <span className="text-slate-900 font-bold">Total a pagar:</span>
-                <span className="text-2xl font-black text-primary">R$ {(selectedPackage ? selectedPackage.price : selectedNumbers.length * raffle.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            <div className="flex-1 overflow-y-auto pr-2 mb-4 custom-scrollbar min-h-0">
+              <div className="space-y-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Números selecionados:</span>
+                  <span className="font-bold text-slate-900">{selectedNumbers.length}</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {selectedNumbers.map(n => (
+                    <span key={n} className="px-2 py-1 bg-primary/10 text-primary text-xs font-bold rounded">
+                      {n.toString().padStart(2, '0')}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
 
-            {step === 1 && (
-              <div className="space-y-4">
-                {selectedNumbers.length > 0 && selectedNumbers.length < (raffle.min_purchase_quantity || 1) && (
-                  <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100">
-                    <AlertCircle className="w-4 h-4" />
-                    A compra mínima para esta rifa é de {raffle.min_purchase_quantity} números.
-                  </div>
-                )}
-                <button 
-                  disabled={selectedNumbers.length < (raffle.min_purchase_quantity || 1)}
-                  onClick={() => setStep(2)}
-                  className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Continuar
-                </button>
+            <div className="shrink-0 space-y-4 pt-4 border-t border-slate-100">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-900 font-bold">Total a pagar:</span>
+                <span className="text-2xl font-black text-primary">R$ {(selectedPackage ? selectedPackage.price : selectedNumbers.length * raffle.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
               </div>
-            )}
 
-            {step === 2 && (
-              <div className="space-y-2">
-                <button 
-                  onClick={handlePurchase}
-                  disabled={generatingPix}
-                  className="w-full btn-secondary flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {generatingPix ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Gerando Pix...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard className="w-4 h-4" />
-                      <span>Pagar Agora</span>
-                    </>
+              {step === 1 && (
+                <div className="space-y-4">
+                  {selectedNumbers.length > 0 && selectedNumbers.length < (raffle.min_purchase_quantity || 1) && (
+                    <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100">
+                      <AlertCircle className="w-4 h-4" />
+                      A compra mínima para esta rifa é de {raffle.min_purchase_quantity} números.
+                    </div>
                   )}
-                </button>
-                <button 
-                  onClick={() => setStep(1)}
-                  disabled={generatingPix}
-                  className="w-full py-2 text-sm font-bold text-slate-500 hover:text-slate-700 disabled:opacity-50"
-                >
-                  Voltar
-                </button>
-              </div>
-            )}
+                  <button 
+                    disabled={selectedNumbers.length < (raffle.min_purchase_quantity || 1)}
+                    onClick={() => setStep(2)}
+                    className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              )}
+
+              {step === 2 && (
+                <div className="space-y-2">
+                  <button 
+                    onClick={handlePurchase}
+                    disabled={generatingPix}
+                    className="w-full btn-secondary flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {generatingPix ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Gerando Pix...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="w-4 h-4" />
+                        <span>Pagar Agora</span>
+                      </>
+                    )}
+                  </button>
+                  <button 
+                    onClick={() => setStep(1)}
+                    disabled={generatingPix}
+                    className="w-full py-2 text-sm font-bold text-slate-500 hover:text-slate-700 disabled:opacity-50"
+                  >
+                    Voltar
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Floating Purchase Button (Mobile) */}
-      {selectedNumbers.length > 0 && step === 1 && (
+      {selectedNumbers.length > 0 && (step === 1 || step === 2) && (
         <div className="fixed bottom-6 left-4 right-4 z-50 md:hidden">
           <motion.button
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            onClick={() => setStep(2)}
-            disabled={selectedNumbers.length < (raffle.min_purchase_quantity || 1)}
+            onClick={() => step === 1 ? setStep(2) : handlePurchase()}
+            disabled={
+              (step === 1 && selectedNumbers.length < (raffle.min_purchase_quantity || 1)) ||
+              (step === 2 && generatingPix)
+            }
             className="w-full bg-primary text-white p-4 rounded-2xl shadow-2xl shadow-primary/40 flex items-center justify-between font-black disabled:opacity-50"
           >
             <div className="text-left">
@@ -932,8 +940,17 @@ const RaffleDetails = () => {
               <p className="text-xl">R$ {(selectedPackage ? selectedPackage.price : selectedNumbers.length * raffle.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
             </div>
             <div className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-xl">
-              <span>Finalizar</span>
-              <ArrowRight className="w-5 h-5" />
+              {generatingPix ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Processando...</span>
+                </>
+              ) : (
+                <>
+                  <span>{step === 1 ? 'Continuar' : 'Pagar Agora'}</span>
+                  <ArrowRight className="w-5 h-5" />
+                </>
+              )}
             </div>
           </motion.button>
         </div>
