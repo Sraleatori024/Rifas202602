@@ -100,7 +100,7 @@ async function startServer() {
 
   // Create Payment (SyncPay PIX)
   app.post("/api/create-payment", async (req, res) => {
-    const { raffleId, numbers, buyer } = req.body;
+    const { raffleId, numbers, buyer, packageId } = req.body;
     
     // Validação básica de entrada
     if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
@@ -131,8 +131,21 @@ async function startServer() {
         }
 
         const raffleData = raffleSnap.data()!;
-        const unitPrice = raffleData.price || 0;
-        const totalAmount = numbers.length * unitPrice;
+        let totalAmount = 0;
+
+        if (packageId) {
+          const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
+          if (!pkg) {
+            throw new Error("Pacote não encontrado.");
+          }
+          if (numbers.length !== pkg.quantity) {
+            throw new Error("Quantidade de números não corresponde ao pacote.");
+          }
+          totalAmount = pkg.price;
+        } else {
+          const unitPrice = raffleData.price || 0;
+          totalAmount = numbers.length * unitPrice;
+        }
 
         // Check if all requested numbers are available
         const selectedNumbersSnap = await transaction.get(

@@ -12,8 +12,25 @@ export interface User {
 
 export interface Prize {
   position: number;
-  value: number;
+  value: string; // Changed to string to allow "iPhone 15" or "R$ 5.000"
   description?: string;
+}
+
+export interface RafflePackage {
+  id: string;
+  quantity: number;
+  price: number;
+  highlight: boolean;
+  active: boolean;
+}
+
+export interface Winner {
+  prize: Prize;
+  number: number;
+  buyer_name: string;
+  buyer_whatsapp: string;
+  buyer_instagram?: string;
+  drawn_at: string;
 }
 
 export interface Raffle {
@@ -22,10 +39,13 @@ export interface Raffle {
   description: string;
   price: number;
   total_numbers: number;
-  end_date: string;
+  start_date: string;
+  end_date?: string;
+  indeterminate_date: boolean;
   image_url: string;
   profit_percent: number;
-  active: number;
+  active: number; // 1: active, 0: ended, 2: drawn
+  status: 'active' | 'ended' | 'drawn';
   created_at: string;
   progress_percent?: number;
   min_purchase_quantity?: number;
@@ -35,6 +55,8 @@ export interface Raffle {
   sold_count?: number;
   revenue?: number;
   prizes?: Prize[];
+  packages?: RafflePackage[];
+  winners?: Winner[];
   promotion?: {
     active: boolean;
     package_quantity: number;
@@ -54,13 +76,4 @@ export interface RaffleNumber {
   buyer_name?: string;
   buyer_whatsapp?: string;
   buyer_instagram?: string;
-}
-
-export interface DrawResult {
-  id: number;
-  raffle_id: number;
-  winning_number: number;
-  winner_name: string;
-  winner_whatsapp: string;
-  draw_date: string;
 }

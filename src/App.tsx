@@ -23,9 +23,11 @@ import {
   Dice5,
   MousePointer2,
   Unlock,
-  Trash2
+  Trash2,
+  Package,
+  ArrowRight
 } from 'lucide-react';
-import { cn, User, Raffle, RaffleNumber, DrawResult } from './types';
+import { cn, User, Raffle, RaffleNumber, Winner } from './types';
 import { auth, db } from './firebase';
 import { 
   signInWithEmailAndPassword, 
@@ -414,6 +416,7 @@ const RaffleDetails = () => {
   const [raffle, setRaffle] = useState<Raffle | null>(null);
   const [numbers, setNumbers] = useState<RaffleNumber[]>([]);
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
+  const [selectedPackage, setSelectedPackage] = useState<any | null>(null);
   const [buyerInfo, setBuyerInfo] = useState({ name: '', whatsapp: '', instagram: '', cpf: '' });
   const [pixData, setPixData] = useState<{ qrcode: string, copyPaste: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -456,6 +459,7 @@ const RaffleDetails = () => {
   }, [raffleId]);
 
   const toggleNumber = (num: number) => {
+    setSelectedPackage(null); // Clear package if manual selection
     if (selectedNumbers.includes(num)) {
       setSelectedNumbers(selectedNumbers.filter(n => n !== num));
     } else {
@@ -463,7 +467,21 @@ const RaffleDetails = () => {
     }
   };
 
+  const handleSelectPackage = (pkg: any) => {
+    setSelectedPackage(pkg);
+    // Select random numbers for the package
+    const available = numbers
+      .filter(n => n.status === 'available')
+      .map(n => n.number);
+    
+    const shuffled = available.sort(() => 0.5 - Math.random());
+    const newSelection = shuffled.slice(0, pkg.quantity);
+    
+    setSelectedNumbers(newSelection);
+  };
+
   const selectRandom = (count: number) => {
+    setSelectedPackage(null); // Clear package if random selection
     const available = numbers
       .filter(n => n.status === 'available' && !selectedNumbers.includes(n.number))
       .map(n => n.number);
@@ -489,7 +507,8 @@ const RaffleDetails = () => {
         body: JSON.stringify({
           raffleId,
           numbers: selectedNumbers,
-          buyer: buyerInfo
+          buyer: buyerInfo,
+          packageId: selectedPackage?.id
         })
       });
 
@@ -566,28 +585,47 @@ const RaffleDetails = () => {
                   )}
                 </div>
 
-                {raffle.prizes && raffle.prizes.length > 0 && (
+                  {raffle.prizes && raffle.prizes.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                        <Trophy className="w-4 h-4 text-primary" />
+                        Prêmios
+                      </h4>
+                      <div className="grid grid-cols-1 gap-2">
+                        {raffle.prizes.sort((a, b) => a.position - b.position).map((prize, idx) => (
+                          <div key={idx} className="flex items-center gap-4 p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                            <div className="w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center font-bold text-sm">
+                              {prize.position}º
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-900 text-sm">{prize.value}</p>
+                              {prize.description && <p className="text-xs text-slate-500">{prize.description}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-3">
                     <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                      <Trophy className="w-4 h-4 text-primary" />
-                      Prêmios
+                      <Clock className="w-4 h-4 text-primary" />
+                      Datas
                     </h4>
-                    <div className="grid grid-cols-1 gap-2">
-                      {raffle.prizes.sort((a, b) => a.position - b.position).map((prize, idx) => (
-                        <div key={idx} className="flex items-center gap-4 p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
-                          <div className="w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center font-bold text-sm">
-                            {prize.position}º
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-900 text-sm">{prize.value}</p>
-                            {prize.description && <p className="text-xs text-slate-500">{prize.description}</p>}
-                          </div>
-                        </div>
-                      ))}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">Início</p>
+                        <p className="text-sm font-bold text-slate-700">{new Date(raffle.start_date).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">Sorteio</p>
+                        <p className="text-sm font-bold text-slate-700">
+                          {raffle.indeterminate_date ? 'A definir' : (raffle.end_date ? new Date(raffle.end_date).toLocaleDateString('pt-BR') : 'A definir')}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
             </div>
           </div>
 
@@ -616,6 +654,50 @@ const RaffleDetails = () => {
                 )}>
                   {progress >= 80 ? "Rifa quase encerrando, não fique de fora." : "Muitas pessoas estão comprando agora."}
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Packages Section */}
+          {raffle.packages && raffle.packages.filter(p => p.active).length > 0 && step === 1 && (
+            <div className="space-y-4 mb-8">
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <Package className="text-primary" />
+                Pacotes Promocionais
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {raffle.packages.filter(p => p.active).map((pkg) => (
+                  <button
+                    key={pkg.id}
+                    onClick={() => handleSelectPackage(pkg)}
+                    className={cn(
+                      "relative p-6 rounded-3xl border-2 transition-all text-left group",
+                      selectedPackage?.id === pkg.id 
+                        ? "border-primary bg-primary/5 shadow-xl shadow-primary/10" 
+                        : "border-slate-100 bg-white hover:border-primary/30"
+                    )}
+                  >
+                    {pkg.highlight && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-secondary text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">
+                        Mais Escolhido
+                      </div>
+                    )}
+                    <div className="flex flex-col h-full justify-between">
+                      <div>
+                        <p className="text-3xl font-black text-slate-900 group-hover:text-primary transition-colors">
+                          {pkg.quantity}
+                        </p>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-tighter">Números da Sorte</p>
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-slate-100">
+                        <p className="text-lg font-black text-primary">
+                          R$ {pkg.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">Apenas R$ {(pkg.price / pkg.quantity).toFixed(2)} cada</p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -781,7 +863,7 @@ const RaffleDetails = () => {
               </div>
               <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
                 <span className="text-slate-900 font-bold">Total a pagar:</span>
-                <span className="text-2xl font-black text-primary">R$ {(selectedNumbers.length * raffle.price).toFixed(2)}</span>
+                <span className="text-2xl font-black text-primary">R$ {(selectedPackage ? selectedPackage.price : selectedNumbers.length * raffle.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
 
@@ -834,6 +916,28 @@ const RaffleDetails = () => {
           </div>
         </div>
       </div>
+
+      {/* Floating Purchase Button (Mobile) */}
+      {selectedNumbers.length > 0 && step === 1 && (
+        <div className="fixed bottom-6 left-4 right-4 z-50 md:hidden">
+          <motion.button
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            onClick={() => setStep(2)}
+            disabled={selectedNumbers.length < (raffle.min_purchase_quantity || 1)}
+            className="w-full bg-primary text-white p-4 rounded-2xl shadow-2xl shadow-primary/40 flex items-center justify-between font-black disabled:opacity-50"
+          >
+            <div className="text-left">
+              <p className="text-[10px] uppercase opacity-80">Total Selecionado</p>
+              <p className="text-xl">R$ {(selectedPackage ? selectedPackage.price : selectedNumbers.length * raffle.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-xl">
+              <span>Finalizar</span>
+              <ArrowRight className="w-5 h-5" />
+            </div>
+          </motion.button>
+        </div>
+      )}
 
       {/* Loading Overlay for Pix Generation */}
       <AnimatePresence>
@@ -938,6 +1042,139 @@ const AdminLogin = ({ onLogin }: { onLogin: (user: User) => void }) => {
   );
 };
 
+const DrawAnimation = ({ 
+  raffle, 
+  winners, 
+  onComplete, 
+  onClose 
+}: { 
+  raffle: Raffle; 
+  winners: Winner[]; 
+  onComplete: () => void;
+  onClose: () => void;
+}) => {
+  const [currentWinnerIndex, setCurrentWinnerIndex] = useState(-1);
+  const [isSuspense, setIsSuspense] = useState(true);
+  const [counter, setCounter] = useState(10);
+
+  useEffect(() => {
+    if (isSuspense) {
+      const timer = setInterval(() => {
+        setCounter(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            setIsSuspense(false);
+            setCurrentWinnerIndex(0);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [isSuspense]);
+
+  const handleNext = () => {
+    if (currentWinnerIndex < winners.length - 1) {
+      setCurrentWinnerIndex(prev => prev + 1);
+    } else {
+      onComplete();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-slate-900 flex items-center justify-center p-4 overflow-hidden">
+      <AnimatePresence mode="wait">
+        {isSuspense ? (
+          <motion.div 
+            key="suspense"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.2 }}
+            className="text-center space-y-8"
+          >
+            <div className="relative">
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="w-48 h-48 border-4 border-primary/20 border-t-primary rounded-full mx-auto"
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-6xl font-black text-white">{counter}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-3xl font-bold text-white uppercase tracking-widest">Sorteando...</h2>
+              <p className="text-primary font-bold animate-pulse">Cruzando os dedos! 🤞</p>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div 
+            key="reveal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="max-w-2xl w-full space-y-8"
+          >
+            <div className="text-center mb-12">
+              <h2 className="text-4xl font-black text-white mb-2">RESULTADO</h2>
+              <p className="text-slate-400">{raffle.name}</p>
+            </div>
+
+            <div className="space-y-4">
+              {winners.slice(0, currentWinnerIndex + 1).map((winner, idx) => (
+                <motion.div 
+                  key={idx}
+                  initial={{ x: -50, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  className="bg-white/10 backdrop-blur-md border border-white/20 p-6 rounded-3xl flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-lg shadow-primary/20">
+                      {winner.prize.position}º
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-primary uppercase">{winner.prize.value}</p>
+                      <p className="text-xl font-bold text-white">{winner.buyer_name}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Número</p>
+                    <p className="text-3xl font-black text-secondary">{winner.number.toString().padStart(2, '0')}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="flex justify-center pt-8">
+              {currentWinnerIndex < winners.length - 1 ? (
+                <button 
+                  onClick={handleNext}
+                  className="btn-primary px-12 py-4 text-lg"
+                >
+                  Revelar Próximo Ganhador
+                </button>
+              ) : (
+                <button 
+                  onClick={onClose}
+                  className="bg-white text-slate-900 font-black px-12 py-4 rounded-2xl hover:bg-slate-100 transition-all text-lg"
+                >
+                  Finalizar e Sair
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Background Effects */}
+      <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 -left-20 w-96 h-96 bg-primary/20 rounded-full blur-[120px]" />
+        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-secondary/20 rounded-full blur-[120px]" />
+      </div>
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -947,7 +1184,9 @@ const AdminDashboard = () => {
     description: '',
     price: 1.00,
     total_numbers: 100,
+    start_date: new Date().toISOString().split('T')[0],
     end_date: '',
+    indeterminate_date: false,
     image_url: '',
     profit_percent: 30,
     progress_percent: 0,
@@ -955,6 +1194,7 @@ const AdminDashboard = () => {
     min_revenue_goal: 0,
     min_sales_percent: 0,
     prizes: [] as any[],
+    packages: [] as any[],
     promotion: {
       active: false,
       package_quantity: 1,
@@ -966,6 +1206,19 @@ const AdminDashboard = () => {
     }
   });
   const [creating, setCreating] = useState(false);
+  const [drawState, setDrawState] = useState<{
+    active: boolean;
+    raffle: Raffle | null;
+    winners: Winner[];
+    currentPrizeIndex: number;
+    isAnimating: boolean;
+  }>({
+    active: false,
+    raffle: null,
+    winners: [],
+    currentPrizeIndex: 0,
+    isAnimating: false
+  });
 
   const [compras, setCompras] = useState<any[]>([]);
   const [globalStats, setGlobalStats] = useState({
@@ -1017,7 +1270,9 @@ const AdminDashboard = () => {
       description: raffle.description,
       price: raffle.price,
       total_numbers: raffle.total_numbers,
-      end_date: raffle.end_date,
+      start_date: raffle.start_date || new Date().toISOString().split('T')[0],
+      end_date: raffle.end_date || '',
+      indeterminate_date: raffle.indeterminate_date || false,
       image_url: raffle.image_url,
       profit_percent: raffle.profit_percent,
       progress_percent: raffle.progress_percent || 0,
@@ -1025,6 +1280,7 @@ const AdminDashboard = () => {
       min_revenue_goal: raffle.min_revenue_goal || 0,
       min_sales_percent: raffle.min_sales_percent || 0,
       prizes: raffle.prizes || [],
+      packages: raffle.packages || [],
       promotion: raffle.promotion || {
         active: false,
         package_quantity: 1,
@@ -1089,6 +1345,37 @@ const AdminDashboard = () => {
     return revenueGoalMet && salesGoalMet;
   };
 
+  const handleEndRaffle = async (raffle: Raffle) => {
+    if (window.confirm(`Deseja realmente encerrar a rifa "${raffle.name}"?`)) {
+      try {
+        await updateDoc(doc(db, "raffles", raffle.id), {
+          active: 0,
+          status: 'ended',
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao encerrar rifa.");
+      }
+    }
+  };
+
+  const handleExtendRaffle = async (raffle: Raffle) => {
+    const newDate = window.prompt("Digite a nova data de encerramento (YYYY-MM-DD):", raffle.end_date || "");
+    if (newDate) {
+      try {
+        await updateDoc(doc(db, "raffles", raffle.id), {
+          end_date: newDate,
+          indeterminate_date: false,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao estender rifa.");
+      }
+    }
+  };
+
   const handleDraw = async (raffle: Raffle) => {
     if (!isGoalMet(raffle)) {
       alert("Meta mínima ainda não atingida. Sorteio bloqueado.");
@@ -1115,33 +1402,44 @@ const AdminDashboard = () => {
         ...doc.data()
       })) as any[];
 
-      // Randomly pick a winner
-      const winnerIndex = Math.floor(Math.random() * soldNumbers.length);
-      const winner = soldNumbers[winnerIndex];
+      const prizes = raffle.prizes || [{ position: 1, value: 'Prêmio Principal', description: '' }];
+      const winners: Winner[] = [];
+      const usedNumbers = new Set<number>();
+      const usedBuyers = new Set<string>();
 
-      console.log("Ganhador sorteado:", winner);
+      // Sort prizes by position
+      const sortedPrizes = [...prizes].sort((a, b) => a.position - b.position);
 
-      // Save draw result
-      const drawRef = doc(collection(db, "draws"));
-      await setDoc(drawRef, {
-        raffleId: raffle.id,
-        raffleName: raffle.name,
-        winnerNumber: winner.number,
-        winnerName: winner.buyer_name,
-        winnerWhatsapp: winner.buyer_whatsapp,
-        winnerInstagram: winner.buyer_instagram || null,
-        drawn_at: new Date().toISOString()
+      for (const prize of sortedPrizes) {
+        // Filter available numbers for this prize (unique number and unique buyer)
+        const availablePool = soldNumbers.filter(n => !usedNumbers.has(n.number) && !usedBuyers.has(n.buyer_whatsapp));
+        
+        if (availablePool.length === 0) break;
+
+        const winnerIndex = Math.floor(Math.random() * availablePool.length);
+        const winnerDoc = availablePool[winnerIndex];
+
+        winners.push({
+          prize: prize,
+          number: winnerDoc.number,
+          buyer_name: winnerDoc.buyer_name,
+          buyer_whatsapp: winnerDoc.buyer_whatsapp,
+          buyer_instagram: winnerDoc.buyer_instagram,
+          drawn_at: new Date().toISOString()
+        });
+
+        usedNumbers.add(winnerDoc.number);
+        usedBuyers.add(winnerDoc.buyer_whatsapp);
+      }
+
+      setDrawState({
+        active: true,
+        raffle,
+        winners,
+        currentPrizeIndex: 0,
+        isAnimating: true
       });
 
-      // Update raffle status to inactive/finished
-      await updateDoc(doc(db, "raffles", raffle.id), {
-        active: 0,
-        winner_number: winner.number,
-        winner_name: winner.buyer_name,
-        finished_at: new Date().toISOString()
-      });
-
-      alert(`SORTEIO REALIZADO!\n\nGanhador: ${winner.buyer_name}\nNúmero: ${winner.number.toString().padStart(2, '0')}\n\nO resultado foi salvo no banco de dados.`);
     } catch (err: any) {
       console.error("Erro ao realizar sorteio:", err);
       alert(`Erro ao realizar sorteio: ${err.message || "Erro desconhecido"}`);
@@ -1156,6 +1454,7 @@ const AdminDashboard = () => {
       if (editingId) {
         await updateDoc(doc(db, "raffles", editingId), {
           ...newRaffle,
+          status: newRaffle.status || 'active',
           updated_at: new Date().toISOString()
         });
         console.log("Rifa atualizada com sucesso.");
@@ -1163,6 +1462,7 @@ const AdminDashboard = () => {
         const raffleData = {
           ...newRaffle,
           active: 1,
+          status: 'active',
           sold_count: 0,
           revenue: 0,
           created_at: new Date().toISOString()
@@ -1199,7 +1499,9 @@ const AdminDashboard = () => {
         description: '',
         price: 1.00,
         total_numbers: 100,
+        start_date: new Date().toISOString().split('T')[0],
         end_date: '',
+        indeterminate_date: false,
         image_url: '',
         profit_percent: 30,
         progress_percent: 0,
@@ -1207,6 +1509,7 @@ const AdminDashboard = () => {
         min_revenue_goal: 0,
         min_sales_percent: 0,
         prizes: [],
+        packages: [],
         promotion: {
           active: false,
           package_quantity: 1,
@@ -1334,6 +1637,12 @@ const AdminDashboard = () => {
                       >
                         <Trophy className="w-4 h-4" />
                       </button>
+                      {raffle.status === 'active' && (
+                        <button onClick={() => handleEndRaffle(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Encerrar"><X className="w-4 h-4" /></button>
+                      )}
+                      {raffle.status === 'ended' && (
+                        <button onClick={() => handleExtendRaffle(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Estender"><Clock className="w-4 h-4" /></button>
+                      )}
                       {!isGoalMet(raffle) && (
                         <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
                       )}
@@ -1346,6 +1655,38 @@ const AdminDashboard = () => {
           </tbody>
         </table>
       </div>
+
+      {drawState.active && drawState.raffle && (
+        <DrawAnimation 
+          raffle={drawState.raffle}
+          winners={drawState.winners}
+          onComplete={() => {
+            const saveWinners = async () => {
+              try {
+                const raffleRef = doc(db, "raffles", drawState.raffle!.id);
+                await updateDoc(raffleRef, {
+                  status: 'drawn',
+                  active: 0,
+                  winners: drawState.winners,
+                  finished_at: new Date().toISOString()
+                });
+                
+                for (const winner of drawState.winners) {
+                  await addDoc(collection(db, "draws"), {
+                    raffleId: drawState.raffle!.id,
+                    raffleName: drawState.raffle!.name,
+                    ...winner
+                  });
+                }
+              } catch (err) {
+                console.error("Error saving winners:", err);
+              }
+            };
+            saveWinners();
+          }}
+          onClose={() => setDrawState({ ...drawState, active: false })}
+        />
+      )}
 
       {/* Create Modal */}
       <AnimatePresence>
@@ -1412,15 +1753,39 @@ const AdminDashboard = () => {
                       className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Data de Encerramento</label>
-                    <input 
-                      type="date" 
-                      required
-                      value={newRaffle.end_date}
-                      onChange={e => setNewRaffle({...newRaffle, end_date: e.target.value})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    />
+                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Data de Início</label>
+                      <input 
+                        type="date" 
+                        required
+                        value={newRaffle.start_date}
+                        onChange={e => setNewRaffle({...newRaffle, start_date: e.target.value})}
+                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Data de Encerramento</label>
+                      <input 
+                        type="date" 
+                        required={!newRaffle.indeterminate_date}
+                        disabled={newRaffle.indeterminate_date}
+                        value={newRaffle.end_date}
+                        onChange={e => setNewRaffle({...newRaffle, end_date: e.target.value})}
+                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
+                      />
+                    </div>
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                          type="checkbox"
+                          checked={newRaffle.indeterminate_date}
+                          onChange={e => setNewRaffle({...newRaffle, indeterminate_date: e.target.checked, end_date: e.target.checked ? '' : newRaffle.end_date})}
+                          className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                        />
+                        <span className="text-sm font-bold text-slate-700 uppercase">Data Indeterminada</span>
+                      </label>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">URL da Imagem</label>
@@ -1464,6 +1829,108 @@ const AdminDashboard = () => {
                       className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                       placeholder="0"
                     />
+                  </div>
+
+                  <div className="md:col-span-2 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                        <Package className="w-4 h-4 text-primary" />
+                        Pacotes de Compra (Opcional)
+                      </h3>
+                      <button 
+                        type="button"
+                        onClick={() => setNewRaffle({
+                          ...newRaffle, 
+                          packages: [...newRaffle.packages, { id: Math.random().toString(36).substr(2, 9), quantity: 1, price: 0, highlight: false, active: true }]
+                        })}
+                        className="text-xs font-bold text-primary hover:text-primary/80 flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Adicionar Pacote
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {newRaffle.packages.map((pkg, idx) => (
+                        <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-white rounded-2xl border border-slate-200 relative group">
+                          <div className="md:col-span-3">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Qtd Números</label>
+                            <input 
+                              type="number"
+                              min="1"
+                              value={pkg.quantity}
+                              onChange={e => {
+                                const newPackages = [...newRaffle.packages];
+                                newPackages[idx].quantity = parseInt(e.target.value);
+                                setNewRaffle({...newRaffle, packages: newPackages});
+                              }}
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Preço (R$)</label>
+                            <input 
+                              type="number"
+                              step="0.01"
+                              value={pkg.price}
+                              onChange={e => {
+                                const newPackages = [...newRaffle.packages];
+                                newPackages[idx].price = parseFloat(e.target.value);
+                                setNewRaffle({...newRaffle, packages: newPackages});
+                              }}
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                          </div>
+                          <div className="md:col-span-3 flex items-center gap-4 pt-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input 
+                                type="checkbox"
+                                checked={pkg.highlight}
+                                onChange={e => {
+                                  const newPackages = [...newRaffle.packages];
+                                  // Only one highlight allowed
+                                  if (e.target.checked) {
+                                    newPackages.forEach(p => p.highlight = false);
+                                  }
+                                  newPackages[idx].highlight = e.target.checked;
+                                  setNewRaffle({...newRaffle, packages: newPackages});
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                              />
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">Destaque</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input 
+                                type="checkbox"
+                                checked={pkg.active}
+                                onChange={e => {
+                                  const newPackages = [...newRaffle.packages];
+                                  newPackages[idx].active = e.target.checked;
+                                  setNewRaffle({...newRaffle, packages: newPackages});
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                              />
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">Ativo</span>
+                            </label>
+                          </div>
+                          <div className="md:col-span-3 flex items-end justify-end pb-2">
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const newPackages = newRaffle.packages.filter((_, i) => i !== idx);
+                                setNewRaffle({...newRaffle, packages: newPackages});
+                              }}
+                              className="text-slate-300 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {newRaffle.packages.length === 0 && (
+                        <p className="text-sm text-slate-400 italic text-center py-4">Nenhum pacote adicionado ainda.</p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="md:col-span-2 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6">
