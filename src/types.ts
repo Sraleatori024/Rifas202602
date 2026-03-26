@@ -10,6 +10,12 @@ export interface User {
   role: 'admin' | 'client';
 }
 
+export interface Prize {
+  position: number;
+  value: number;
+  description?: string;
+}
+
 export interface Raffle {
   id: string;
   name: string;
@@ -28,6 +34,7 @@ export interface Raffle {
   draw_manually_released?: boolean;
   sold_count?: number;
   revenue?: number;
+  prizes?: Prize[];
   promotion?: {
     active: boolean;
     package_quantity: number;

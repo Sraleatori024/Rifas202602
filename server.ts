@@ -119,17 +119,52 @@ async function startServer() {
     }
 
     try {
-      // 1. Buscar dados da rifa para calcular valor
-      const raffleRef = getDb().collection("raffles").doc(raffleId);
-      const raffleSnap = await raffleRef.get();
-      
-      if (!raffleSnap.exists) {
-        return res.status(404).json({ success: false, message: "Rifa não encontrada." });
-      }
+      const db = getDb();
+      const raffleRef = db.collection("raffles").doc(raffleId);
+      const numbersRef = raffleRef.collection("numbers");
 
-      const raffleData = raffleSnap.data()!;
-      const unitPrice = raffleData.price || 0;
-      const totalAmount = numbers.length * unitPrice;
+      // Use a transaction to check and reserve numbers atomically
+      const result = await db.runTransaction(async (transaction) => {
+        const raffleSnap = await transaction.get(raffleRef);
+        if (!raffleSnap.exists) {
+          throw new Error("Rifa não encontrada.");
+        }
+
+        const raffleData = raffleSnap.data()!;
+        const unitPrice = raffleData.price || 0;
+        const totalAmount = numbers.length * unitPrice;
+
+        // Check if all requested numbers are available
+        const selectedNumbersSnap = await transaction.get(
+          numbersRef.where("number", "in", numbers)
+        );
+
+        const unavailableNumbers: number[] = [];
+        selectedNumbersSnap.forEach((doc) => {
+          const data = doc.data();
+          if (data.status !== "available") {
+            unavailableNumbers.push(data.number);
+          }
+        });
+
+        if (unavailableNumbers.length > 0) {
+          throw new Error(`Os seguintes números já foram reservados ou comprados: ${unavailableNumbers.join(", ")}`);
+        }
+
+        // Reserve numbers (mark as pending)
+        selectedNumbersSnap.forEach((doc) => {
+          transaction.update(doc.ref, {
+            status: "pending",
+            reserved_at: admin.firestore.FieldValue.serverTimestamp(),
+            buyer_name: buyer.name,
+            buyer_whatsapp: normalizePhone(buyer.whatsapp)
+          });
+        });
+
+        return { totalAmount, raffleData };
+      });
+
+      const { totalAmount, raffleData } = result;
 
       // 2. Gerar Token SyncPayments
       let accessToken;

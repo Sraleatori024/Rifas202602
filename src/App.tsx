@@ -378,22 +378,18 @@ const Home = () => {
                 <p className="text-slate-600 text-sm mb-6 line-clamp-2">{raffle.description}</p>
                 
                 <div className="space-y-4">
-                  <div className="flex justify-between text-sm font-medium">
-                    <span className="text-slate-500">Progresso</span>
-                    <span className="text-primary font-bold">{progress}%</span>
-                  </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${progress}%` }}
-                      className="bg-gradient-to-r from-primary to-blue-400 h-full rounded-full"
-                    />
-                  </div>
-                  
-                  {isPromoActive && (
-                    <p className="text-[10px] text-red-600 font-bold animate-bounce text-center uppercase tracking-wider">
-                      Aproveite antes que acabe!
-                    </p>
+                  {progress >= 80 ? (
+                    <div className="flex items-center gap-2 text-red-600 font-bold text-xs animate-pulse">
+                      <AlertCircle className="w-4 h-4" />
+                      <span>🚨 Rifa quase encerrando!</span>
+                    </div>
+                  ) : progress >= 50 ? (
+                    <div className="flex items-center gap-2 text-amber-600 font-bold text-xs">
+                      <TrendingUp className="w-4 h-4" />
+                      <span>🔥 Alta procura agora!</span>
+                    </div>
+                  ) : (
+                    <div className="h-4" />
                   )}
 
                   <Link 
@@ -421,6 +417,7 @@ const RaffleDetails = () => {
   const [buyerInfo, setBuyerInfo] = useState({ name: '', whatsapp: '', instagram: '', cpf: '' });
   const [pixData, setPixData] = useState<{ qrcode: string, copyPaste: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generatingPix, setGeneratingPix] = useState(false);
   const [step, setStep] = useState(1); // 1: Selection, 2: Info, 3: Payment
   const [stats, setStats] = useState({ total: 0, sold: 0, available: 0 });
 
@@ -483,6 +480,7 @@ const RaffleDetails = () => {
       return;
     }
 
+    setGeneratingPix(true);
     try {
       // Call the secure API for payment simulation
       const res = await fetch('/api/create-payment', {
@@ -499,7 +497,7 @@ const RaffleDetails = () => {
         const data = await res.json();
         
         const pixCode = data.pix_code;
-        const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
+        const qrImage = data.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
 
         setPixData({
           qrcode: qrImage,
@@ -513,6 +511,8 @@ const RaffleDetails = () => {
     } catch (err: any) {
       console.error("Erro ao processar compra:", err);
       alert("Erro ao processar compra.");
+    } finally {
+      setGeneratingPix(false);
     }
   };
 
@@ -565,29 +565,60 @@ const RaffleDetails = () => {
                     </div>
                   )}
                 </div>
+
+                {raffle.prizes && raffle.prizes.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                      <Trophy className="w-4 h-4 text-primary" />
+                      Prêmios
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {raffle.prizes.sort((a, b) => a.position - b.position).map((prize, idx) => (
+                        <div key={idx} className="flex items-center gap-4 p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                          <div className="w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center font-bold text-sm">
+                            {prize.position}º
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900 text-sm">{prize.value}</p>
+                            {prize.description && <p className="text-xs text-slate-500">{prize.description}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Progress Bar (Fake) */}
-          <div className="card p-6 bg-gradient-to-br from-white to-slate-50">
-            <div className="flex justify-between items-end mb-4">
+          {/* Scarcity Message */}
+          {progress >= 50 && (
+            <div className={cn(
+              "card p-6 flex items-center gap-4 border-2",
+              progress >= 80 ? "bg-red-50 border-red-100 animate-pulse" : "bg-amber-50 border-amber-100"
+            )}>
+              <div className={cn(
+                "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
+                progress >= 80 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"
+              )}>
+                {progress >= 80 ? <AlertCircle className="w-6 h-6" /> : <TrendingUp className="w-6 h-6" />}
+              </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Status da Rifa</h3>
-                <p className="text-sm text-slate-500 italic">Aproveite antes que acabe!</p>
-              </div>
-              <div className="text-right">
-                <span className="text-3xl font-black text-primary">{progress}%</span>
+                <p className={cn(
+                  "font-black uppercase tracking-tight",
+                  progress >= 80 ? "text-red-900" : "text-amber-900"
+                )}>
+                  {progress >= 80 ? "🚨 Alta procura, garanta já o seu!" : "🔥 Restam poucos números!"}
+                </p>
+                <p className={cn(
+                  "text-sm font-medium",
+                  progress >= 80 ? "text-red-600" : "text-amber-600"
+                )}>
+                  {progress >= 80 ? "Rifa quase encerrando, não fique de fora." : "Muitas pessoas estão comprando agora."}
+                </p>
               </div>
             </div>
-            <div className="w-full bg-slate-200 h-6 rounded-full overflow-hidden mb-2 shadow-inner p-1">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${progress}%` }}
-                className="bg-gradient-to-r from-primary via-blue-500 to-primary bg-[length:200%_100%] animate-shimmer h-full rounded-full shadow-lg"
-              />
-            </div>
-          </div>
+          )}
 
           {/* Number Selection */}
           {isSoldOut ? (
@@ -618,7 +649,7 @@ const RaffleDetails = () => {
                       onClick={() => toggleNumber(n.number)}
                       className={cn(
                         "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                        n.status === 'sold' ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
+                        (n.status === 'sold' || n.status === 'pending') ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
                         selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
                         "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
                       )}
@@ -776,14 +807,25 @@ const RaffleDetails = () => {
               <div className="space-y-2">
                 <button 
                   onClick={handlePurchase}
-                  className="w-full btn-secondary flex items-center justify-center gap-2"
+                  disabled={generatingPix}
+                  className="w-full btn-secondary flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  <CreditCard className="w-4 h-4" />
-                  Pagar Agora
+                  {generatingPix ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Gerando Pix...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="w-4 h-4" />
+                      <span>Pagar Agora</span>
+                    </>
+                  )}
                 </button>
                 <button 
                   onClick={() => setStep(1)}
-                  className="w-full py-2 text-sm font-bold text-slate-500 hover:text-slate-700"
+                  disabled={generatingPix}
+                  className="w-full py-2 text-sm font-bold text-slate-500 hover:text-slate-700 disabled:opacity-50"
                 >
                   Voltar
                 </button>
@@ -792,6 +834,31 @@ const RaffleDetails = () => {
           </div>
         </div>
       </div>
+
+      {/* Loading Overlay for Pix Generation */}
+      <AnimatePresence>
+        {generatingPix && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <div className="text-center space-y-6">
+              <div className="relative">
+                <div className="w-24 h-24 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <CreditCard className="w-8 h-8 text-primary animate-pulse" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-bold text-white">Gerando seu QR Code Pix</h3>
+                <p className="text-slate-400">Aguarde um momento, estamos processando sua reserva...</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -887,6 +954,7 @@ const AdminDashboard = () => {
     min_purchase_quantity: 1,
     min_revenue_goal: 0,
     min_sales_percent: 0,
+    prizes: [] as any[],
     promotion: {
       active: false,
       package_quantity: 1,
@@ -956,6 +1024,7 @@ const AdminDashboard = () => {
       min_purchase_quantity: raffle.min_purchase_quantity || 1,
       min_revenue_goal: raffle.min_revenue_goal || 0,
       min_sales_percent: raffle.min_sales_percent || 0,
+      prizes: raffle.prizes || [],
       promotion: raffle.promotion || {
         active: false,
         package_quantity: 1,
@@ -1137,6 +1206,7 @@ const AdminDashboard = () => {
         min_purchase_quantity: 1,
         min_revenue_goal: 0,
         min_sales_percent: 0,
+        prizes: [],
         promotion: {
           active: false,
           package_quantity: 1,
@@ -1394,6 +1464,89 @@ const AdminDashboard = () => {
                       className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                       placeholder="0"
                     />
+                  </div>
+
+                  <div className="md:col-span-2 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                        <Trophy className="w-4 h-4 text-primary" />
+                        Premiação
+                      </h3>
+                      <button 
+                        type="button"
+                        onClick={() => setNewRaffle({
+                          ...newRaffle, 
+                          prizes: [...newRaffle.prizes, { position: newRaffle.prizes.length + 1, value: '', description: '' }]
+                        })}
+                        className="text-xs font-bold text-primary hover:text-primary/80 flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Adicionar Prêmio
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {newRaffle.prizes.map((prize, idx) => (
+                        <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-white rounded-2xl border border-slate-200 relative group">
+                          <div className="md:col-span-2">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Posição</label>
+                            <input 
+                              type="number"
+                              value={prize.position}
+                              onChange={e => {
+                                const newPrizes = [...newRaffle.prizes];
+                                newPrizes[idx].position = parseInt(e.target.value);
+                                setNewRaffle({...newRaffle, prizes: newPrizes});
+                              }}
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                          </div>
+                          <div className="md:col-span-4">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Prêmio/Valor</label>
+                            <input 
+                              type="text"
+                              value={prize.value}
+                              onChange={e => {
+                                const newPrizes = [...newRaffle.prizes];
+                                newPrizes[idx].value = e.target.value;
+                                setNewRaffle({...newRaffle, prizes: newPrizes});
+                              }}
+                              placeholder="Ex: iPhone 15 Pro"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                          </div>
+                          <div className="md:col-span-5">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Descrição (Opcional)</label>
+                            <input 
+                              type="text"
+                              value={prize.description}
+                              onChange={e => {
+                                const newPrizes = [...newRaffle.prizes];
+                                newPrizes[idx].description = e.target.value;
+                                setNewRaffle({...newRaffle, prizes: newPrizes});
+                              }}
+                              placeholder="Ex: Cor Titânio Natural"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                          </div>
+                          <div className="md:col-span-1 flex items-end justify-center pb-2">
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const newPrizes = newRaffle.prizes.filter((_, i) => i !== idx);
+                                setNewRaffle({...newRaffle, prizes: newPrizes});
+                              }}
+                              className="text-slate-300 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {newRaffle.prizes.length === 0 && (
+                        <p className="text-sm text-slate-400 italic text-center py-4">Nenhum prêmio adicionado ainda.</p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="md:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
