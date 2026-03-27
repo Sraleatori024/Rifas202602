@@ -15,10 +15,9 @@ const normalizePhone = (phone: string) => {
 };
 
 // 4) Validar CPF com 11 números
-const normalizeCPF = (cpf?: string) => {
-  if (!cpf) return null;
-  const clean = String(cpf).replace(/\D/g, "");
-  return clean.length === 11 ? clean : null;
+const normalizeCPF = (cpf: string) => {
+  const clean = String(cpf || "").replace(/\D/g, "");
+  return clean;
 };
 
 // 1) Criar função para gerar token automaticamente
@@ -236,14 +235,7 @@ async function startServer() {
       }
 
     // 3. Criar Pagamento na SyncPayments
-    const rawAppUrl = process.env.APP_URL;
-    if (!rawAppUrl) {
-      return res.status(500).json({
-        success: false,
-        code: "APP_URL_NAO_CONFIGURADA",
-        message: "A URL da aplicação não está configurada no ambiente."
-      });
-    }
+    const rawAppUrl = process.env.APP_URL || "https://ais-dev-qe6hjdlzyao7gwzeoa7fvv-101643794289.us-east1.run.app";
     const appUrl = rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl;
     const payload = {
       amount: Number(totalAmount.toFixed(2)),
@@ -251,7 +243,7 @@ async function startServer() {
       webhook_url: `${appUrl}/api/webhook-syncpay`,
       client: {
           name: buyer.name,
-          cpf: normalizeCPF(buyer.cpf) || undefined,
+          cpf: normalizedCPF,
           email: buyer.email || "cliente@exemplo.com",
           phone: normalizePhone(buyer.whatsapp)
         }
@@ -260,8 +252,6 @@ async function startServer() {
       // 5. PIX_GERACAO_ERRO
       let syncPayResult;
       try {
-        console.log("CPF enviado:", payload.client.cpf);
-        console.log("Webhook URL:", payload.webhook_url);
         console.log("Enviando payload para SyncPayments:", JSON.stringify(payload, null, 2));
         syncPayResult = await createCashIn(accessToken, payload);
         console.log("Resultado SyncPayments:", syncPayResult);
