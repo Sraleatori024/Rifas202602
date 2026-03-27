@@ -229,19 +229,36 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                         <p className="font-bold text-slate-900">{consultResult.name}</p>
                       </div>
 
-                      <div className="space-y-3">
-                        <p className="text-xs text-slate-500 font-bold uppercase">Números encontrados</p>
-                        {consultResult.numbers.length === 0 ? (
-                          <p className="text-sm text-slate-400 italic">Nenhum número encontrado.</p>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            {consultResult.numbers.map((n: number) => (
-                              <span key={n} className="px-3 py-1 bg-primary/10 text-primary text-sm font-bold rounded-lg border border-primary/20">
-                                {n.toString().padStart(2, '0')}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-xs text-slate-500 font-bold uppercase mb-2">Números Confirmados</p>
+                          {consultResult.confirmed.length === 0 ? (
+                            <p className="text-sm text-slate-400 italic">Nenhum número pago ainda.</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {consultResult.confirmed.map((n: number) => (
+                                <span key={n} className="px-3 py-1 bg-emerald-50 text-emerald-600 text-sm font-bold rounded-lg border border-emerald-100">
+                                  {n.toString().padStart(2, '0')}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-500 font-bold uppercase mb-2">Reservas Pendentes</p>
+                          {consultResult.pending.length === 0 ? (
+                            <p className="text-sm text-slate-400 italic">Nenhuma reserva pendente.</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {consultResult.pending.map((n: number) => (
+                                <span key={n} className="px-3 py-1 bg-amber-50 text-amber-600 text-sm font-bold rounded-lg border border-amber-100">
+                                  {n.toString().padStart(2, '0')}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -349,6 +366,7 @@ const Home = () => {
                 <img 
                   src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} 
                   alt={raffle.name}
+                  referrerPolicy="no-referrer"
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                 />
                 {isPromoActive && (
@@ -444,8 +462,8 @@ const RaffleDetails = () => {
       setNumbers(nums.sort((a, b) => a.number - b.number));
       
       const total = nums.length;
-      const sold = nums.filter(n => n.status === 'sold').length;
-      setStats({ total, sold, available: total - sold });
+      const confirmed = nums.filter(n => n.status === 'confirmed').length;
+      setStats({ total, sold: confirmed, available: total - confirmed });
       setLoading(false);
     }, (error) => {
       console.error("Error fetching numbers:", error);
@@ -550,7 +568,11 @@ const RaffleDetails = () => {
         {/* Left Column: Info */}
         <div className="lg:col-span-2 space-y-8">
           <div className="card">
-            <img src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} className="w-full h-72 object-cover" />
+            <img 
+              src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/800/600`} 
+              className="w-full h-72 object-cover" 
+              referrerPolicy="no-referrer"
+            />
             <div className="p-6">
               <div className="flex justify-between items-start mb-4">
                 <h1 className="text-3xl font-bold text-slate-900">{raffle.name}</h1>
@@ -731,7 +753,7 @@ const RaffleDetails = () => {
                       onClick={() => toggleNumber(n.number)}
                       className={cn(
                         "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                        (n.status === 'sold' || n.status === 'pending') ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
+                        (n.status === 'confirmed' || n.status === 'pending') ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
                         selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
                         "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
                       )}
@@ -807,7 +829,7 @@ const RaffleDetails = () => {
               {pixData && (
                 <div className="space-y-6 mb-8">
                   <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm inline-block mx-auto">
-                    <img id="pix-qrcode" src={pixData.qrcode} alt="PIX QR Code" className="w-48 h-48 mx-auto" />
+                    <img id="pix-qrcode" src={pixData.qrcode} alt="PIX QR Code" className="w-48 h-48 mx-auto" referrerPolicy="no-referrer" />
                   </div>
                   
                   <div className="space-y-2">
@@ -1406,15 +1428,15 @@ const AdminDashboard = () => {
     try {
       console.log("Iniciando sorteio...");
       const numbersRef = collection(db, "raffles", raffle.id, "numbers");
-      const q = query(numbersRef, where("status", "==", "sold"));
-      const soldNumbersSnap = await getDocs(q);
+      const q = query(numbersRef, where("status", "==", "confirmed"));
+      const confirmedNumbersSnap = await getDocs(q);
 
-      if (soldNumbersSnap.empty) {
-        alert("Nenhum número foi vendido para esta rifa. Sorteio cancelado.");
+      if (confirmedNumbersSnap.empty) {
+        alert("Nenhum número foi confirmado para esta rifa. Sorteio cancelado.");
         return;
       }
 
-      const soldNumbers = soldNumbersSnap.docs.map(doc => ({
+      const confirmedNumbers = confirmedNumbersSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as any[];
@@ -1429,7 +1451,7 @@ const AdminDashboard = () => {
 
       for (const prize of sortedPrizes) {
         // Filter available numbers for this prize (unique number and unique buyer)
-        const availablePool = soldNumbers.filter(n => !usedNumbers.has(n.number) && !usedBuyers.has(n.buyer_whatsapp));
+        const availablePool = confirmedNumbers.filter(n => !usedNumbers.has(n.number) && !usedBuyers.has(n.buyer_whatsapp));
         
         if (availablePool.length === 0) break;
 
@@ -1608,7 +1630,11 @@ const AdminDashboard = () => {
                 <tr key={raffle.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <img src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} className="w-10 h-10 rounded-lg object-cover" />
+                      <img 
+                        src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} 
+                        className="w-10 h-10 rounded-lg object-cover" 
+                        referrerPolicy="no-referrer"
+                      />
                       <div>
                         <p className="font-bold text-slate-900">{raffle.name}</p>
                         <p className="text-xs text-slate-500">{raffle.total_numbers} números</p>

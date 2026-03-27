@@ -30,7 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     for (const docSnap of selectedNumbersSnap.docs) {
       batch.update(docSnap.ref, {
-        status: 'sold',
+        status: 'confirmed',
         buyer_name: nome,
         buyer_whatsapp: telefone,
         updated_at: admin.firestore.FieldValue.serverTimestamp()

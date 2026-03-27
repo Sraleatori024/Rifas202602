@@ -146,6 +146,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const raffleRef = db.collection("raffles").doc(raffleId);
     const numbersRef = raffleRef.collection("numbers");
 
+    // --- LAZY CLEANUP: Release expired pending numbers (10 min) ---
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const expiredSnap = await numbersRef
+      .where("status", "==", "pending")
+      .where("reserved_at", "<", admin.firestore.Timestamp.fromDate(tenMinutesAgo))
+      .get();
+
+    if (!expiredSnap.empty) {
+      const cleanupBatch = db.batch();
+      expiredSnap.forEach(doc => {
+        cleanupBatch.update(doc.ref, {
+          status: "available",
+          reserved_at: null,
+          buyer_name: null,
+          buyer_whatsapp: null
+        });
+      });
+      await cleanupBatch.commit();
+      console.log(`[Cleanup] Released ${expiredSnap.size} expired numbers for raffle ${raffleId}`);
+    }
+
     // Use a transaction to check and reserve numbers atomically
     const result = await db.runTransaction(async (transaction) => {
       const raffleSnap = await transaction.get(raffleRef);

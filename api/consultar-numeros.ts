@@ -24,23 +24,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ success: false, message: "Nenhuma compra encontrada" });
     }
 
-    let allNumbers: number[] = [];
+    let pendingNumbers: number[] = [];
+    let confirmedNumbers: number[] = [];
     let name = "";
 
     snapshot.forEach(doc => {
       const data = doc.data();
       if (data.numero && Array.isArray(data.numero)) {
-        allNumbers = [...allNumbers, ...data.numero];
+        if (data.status === "paid") {
+          confirmedNumbers = [...confirmedNumbers, ...data.numero];
+        } else {
+          pendingNumbers = [...pendingNumbers, ...data.numero];
+        }
       }
       if (!name && data.nome) name = data.nome;
     });
 
-    // Remover duplicatas se houver
-    allNumbers = [...new Set(allNumbers)].sort((a, b) => a - b);
+    // Remover duplicatas e ordenar
+    pendingNumbers = [...new Set(pendingNumbers)].sort((a, b) => a - b);
+    confirmedNumbers = [...new Set(confirmedNumbers)].sort((a, b) => a - b);
 
     res.json({
       success: true,
-      numbers: allNumbers,
+      pending: pendingNumbers,
+      confirmed: confirmedNumbers,
       name: name
     });
 
