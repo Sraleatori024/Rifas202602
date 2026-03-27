@@ -195,111 +195,153 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
               className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden border border-slate-100"
             >
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h2 className="text-xl font-bold text-slate-900">Consultar Meus Números</h2>
-                <button onClick={() => setShowConsult(false)} className="text-slate-400 hover:text-slate-600"><X /></button>
+              <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-white">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Meus Números</h2>
+                  <p className="text-sm text-slate-500 font-medium">Consulte suas reservas e compras</p>
+                </div>
+                <button 
+                  onClick={() => setShowConsult(false)} 
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <div className="p-6 space-y-6">
+              
+              <div className="p-8">
                 {!consultResult ? (
-                  <form onSubmit={handleConsult} className="space-y-4">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-2xl border border-primary/10 mb-2">
-                        <Search className="w-5 h-5 text-primary" />
-                        <p className="text-xs text-slate-600 font-medium">Busque por seus números usando um dos campos abaixo.</p>
+                  <form onSubmit={handleConsult} className="space-y-6">
+                    <div className="space-y-5">
+                      <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10 flex gap-3 items-start">
+                        <Search className="w-5 h-5 text-primary mt-0.5" />
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          Informe seu WhatsApp ou CPF para localizar todos os seus números da sorte.
+                        </p>
                       </div>
-                      <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1">Seu WhatsApp</label>
-                        <div className="relative">
-                          <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                          <input 
-                            type="tel" 
-                            value={phone}
-                            onChange={e => setPhone(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                            placeholder="(00) 00000-0000"
-                          />
+
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 ml-1">WhatsApp</label>
+                          <div className="relative group">
+                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-primary transition-colors" />
+                            <input 
+                              type="tel" 
+                              value={phone}
+                              onChange={e => setPhone(e.target.value)}
+                              className="w-full pl-11 pr-4 py-3.5 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-medium"
+                              placeholder="(00) 00000-0000"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="relative flex items-center py-2">
+                          <div className="flex-grow border-t border-slate-100"></div>
+                          <span className="flex-shrink mx-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">ou</span>
+                          <div className="flex-grow border-t border-slate-100"></div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 ml-1">CPF</label>
+                          <div className="relative group">
+                            <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-primary transition-colors" />
+                            <input 
+                              type="text" 
+                              value={cpf}
+                              onChange={e => setCpf(e.target.value)}
+                              className="w-full pl-11 pr-4 py-3.5 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-medium"
+                              placeholder="000.000.000-00"
+                            />
+                          </div>
                         </div>
                       </div>
-                      <div className="relative">
-                        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
-                        <div className="relative flex justify-center text-[10px] uppercase font-black"><span className="bg-white px-3 text-slate-300">ou</span></div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1">Seu CPF</label>
-                        <div className="relative">
-                          <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                          <input 
-                            type="text" 
-                            value={cpf}
-                            onChange={e => setCpf(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                            placeholder="000.000.000-00"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 pt-2">
+
+                      <div className="flex flex-col gap-3 pt-4">
                         <button 
                           type="submit" 
                           disabled={consulting || (!phone && !cpf)} 
-                          className="btn-primary w-full py-3 text-lg font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
+                          className="w-full bg-primary text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
                         >
-                          {consulting ? 'Buscando...' : 'Buscar Meus Números'}
+                          {consulting ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              <span>Buscando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Search className="w-5 h-5" />
+                              <span>Buscar Números</span>
+                            </>
+                          )}
                         </button>
+                        
                         <button 
                           type="button"
                           onClick={() => setShowConsult(false)}
-                          className="w-full py-2 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                          className="w-full py-3 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors flex items-center justify-center gap-2"
                         >
-                          Cancelar
+                          Voltar para a rifa
                         </button>
                       </div>
                     </div>
                   </form>
                 ) : (
-                  <div className="space-y-6">
-                    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <p className="text-xs text-slate-500 font-bold uppercase">Nome</p>
-                          <p className="font-bold text-slate-900 truncate">{consultResult.name}</p>
+                  <div className="space-y-8">
+                    <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                      <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                          <UserIcon className="w-6 h-6 text-primary" />
                         </div>
-                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <p className="text-xs text-slate-500 font-bold uppercase">Status</p>
-                          <p className="font-bold text-emerald-600">Ativo</p>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cliente</p>
+                          <p className="font-bold text-slate-900">{consultResult.name}</p>
                         </div>
                       </div>
 
-                      <div className="space-y-4">
-                        <div>
-                          <p className="text-xs text-slate-500 font-bold uppercase mb-2">Números Confirmados</p>
+                      <div className="space-y-6">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between px-1">
+                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Números Pagos</p>
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-md">
+                              {consultResult.confirmed.length}
+                            </span>
+                          </div>
                           {consultResult.confirmed.length === 0 ? (
-                            <p className="text-sm text-slate-400 italic">Nenhum número pago ainda.</p>
+                            <div className="p-6 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200 text-center">
+                              <p className="text-sm text-slate-400 font-medium">Nenhum número pago encontrado.</p>
+                            </div>
                           ) : (
-                            <div className="flex flex-wrap gap-2">
+                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
                               {consultResult.confirmed.map((n: number) => (
-                                <span key={n} className="px-3 py-1 bg-emerald-50 text-emerald-600 text-sm font-bold rounded-lg border border-emerald-100">
+                                <div key={n} className="aspect-square flex items-center justify-center bg-emerald-50 text-emerald-600 text-sm font-black rounded-xl border border-emerald-100 shadow-sm">
                                   {n.toString().padStart(2, '0')}
-                                </span>
+                                </div>
                               ))}
                             </div>
                           )}
                         </div>
 
-                        <div>
-                          <p className="text-xs text-slate-500 font-bold uppercase mb-2">Reservas Pendentes</p>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between px-1">
+                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Reservas Pendentes</p>
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-black rounded-md">
+                              {consultResult.pending.length}
+                            </span>
+                          </div>
                           {consultResult.pending.length === 0 ? (
-                            <p className="text-sm text-slate-400 italic">Nenhuma reserva pendente.</p>
+                            <div className="p-6 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200 text-center">
+                              <p className="text-sm text-slate-400 font-medium">Nenhuma reserva pendente.</p>
+                            </div>
                           ) : (
-                            <div className="flex flex-wrap gap-2">
+                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
                               {consultResult.pending.map((n: number) => (
-                                <span key={n} className="px-3 py-1 bg-amber-50 text-amber-600 text-sm font-bold rounded-lg border border-amber-100">
+                                <div key={n} className="aspect-square flex items-center justify-center bg-amber-50 text-amber-600 text-sm font-black rounded-xl border border-amber-100 shadow-sm">
                                   {n.toString().padStart(2, '0')}
-                                </span>
+                                </div>
                               ))}
                             </div>
                           )}
@@ -307,17 +349,17 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-3 pt-4 border-t border-slate-100">
+                    <div className="flex flex-col gap-3 pt-6 border-t border-slate-100">
                       <button 
                         onClick={() => setShowConsult(false)} 
-                        className="btn-primary w-full py-3 flex items-center justify-center gap-2"
+                        className="w-full bg-primary text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                       >
-                        <Ticket className="w-4 h-4" />
+                        <Ticket className="w-5 h-5" />
                         Voltar para a rifa
                       </button>
                       <button 
                         onClick={() => { setConsultResult(null); setPhone(''); setCpf(''); }} 
-                        className="w-full py-2 text-sm font-bold text-slate-500 hover:text-primary transition-colors"
+                        className="w-full py-2 text-sm font-bold text-slate-400 hover:text-primary transition-colors"
                       >
                         Consultar outro número
                       </button>
@@ -326,6 +368,7 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                 )}
               </div>
             </motion.div>
+
           </div>
         )}
       </AnimatePresence>
