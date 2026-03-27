@@ -26,7 +26,8 @@ import {
   Trash2,
   Package,
   Hash,
-  ArrowRight
+  ArrowRight,
+  Search
 } from 'lucide-react';
 import { cn, User, Raffle, RaffleNumber, Winner } from './types';
 import { auth, db } from './firebase';
@@ -207,37 +208,56 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                 {!consultResult ? (
                   <form onSubmit={handleConsult} className="space-y-4">
                     <div className="space-y-4">
+                      <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-2xl border border-primary/10 mb-2">
+                        <Search className="w-5 h-5 text-primary" />
+                        <p className="text-xs text-slate-600 font-medium">Busque por seus números usando um dos campos abaixo.</p>
+                      </div>
                       <div>
                         <label className="block text-sm font-bold text-slate-700 mb-1">Seu WhatsApp</label>
-                        <input 
-                          type="tel" 
-                          value={phone}
-                          onChange={e => setPhone(e.target.value)}
-                          className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          placeholder="(00) 00000-0000"
-                        />
+                        <div className="relative">
+                          <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input 
+                            type="tel" 
+                            value={phone}
+                            onChange={e => setPhone(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                            placeholder="(00) 00000-0000"
+                          />
+                        </div>
                       </div>
                       <div className="relative">
                         <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
-                        <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">ou</span></div>
+                        <div className="relative flex justify-center text-[10px] uppercase font-black"><span className="bg-white px-3 text-slate-300">ou</span></div>
                       </div>
                       <div>
                         <label className="block text-sm font-bold text-slate-700 mb-1">Seu CPF</label>
-                        <input 
-                          type="text" 
-                          value={cpf}
-                          onChange={e => setCpf(e.target.value)}
-                          className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                          placeholder="000.000.000-00"
-                        />
+                        <div className="relative">
+                          <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input 
+                            type="text" 
+                            value={cpf}
+                            onChange={e => setCpf(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                            placeholder="000.000.000-00"
+                          />
+                        </div>
                       </div>
-                      <button 
-                        type="submit" 
-                        disabled={consulting || (!phone && !cpf)} 
-                        className="btn-primary w-full py-3 text-lg font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
-                      >
-                        {consulting ? 'Buscando...' : 'Buscar Meus Números'}
-                      </button>
+                      <div className="flex flex-col gap-2 pt-2">
+                        <button 
+                          type="submit" 
+                          disabled={consulting || (!phone && !cpf)} 
+                          className="btn-primary w-full py-3 text-lg font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
+                        >
+                          {consulting ? 'Buscando...' : 'Buscar Meus Números'}
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => setShowConsult(false)}
+                          className="w-full py-2 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
                     </div>
                   </form>
                 ) : (
@@ -464,7 +484,8 @@ const RaffleDetails = () => {
   const [pixData, setPixData] = useState<{ qrcode: string, copyPaste: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generatingPix, setGeneratingPix] = useState(false);
-  const [step, setStep] = useState(1); // 1: Selection, 2: Info, 3: Payment
+  const [step, setStep] = useState(1); // 1: Selection, 2: Info, 3: Payment, 4: Success
+  const [purchaseId, setPurchaseId] = useState<string | null>(null);
   const [stats, setStats] = useState({ total: 0, sold: 0, available: 0 });
 
   useEffect(() => {
@@ -500,6 +521,16 @@ const RaffleDetails = () => {
       unsubNumbers();
     };
   }, [raffleId]);
+
+  useEffect(() => {
+    if (!purchaseId) return;
+    const unsub = onSnapshot(doc(db, "compras", purchaseId), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().status === 'paid') {
+        setStep(4);
+      }
+    });
+    return () => unsub();
+  }, [purchaseId]);
 
   const toggleNumber = (num: number) => {
     setSelectedPackage(null); // Clear package if manual selection
@@ -561,6 +592,7 @@ const RaffleDetails = () => {
         const pixCode = data.pix_code;
         const qrImage = data.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
 
+        setPurchaseId(data.identifier);
         setPixData({
           qrcode: qrImage,
           copyPaste: pixCode
@@ -792,85 +824,109 @@ const RaffleDetails = () => {
           )}
 
           {step === 2 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="card p-6">
-              <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                <UserIcon className="text-primary" />
-                Seus Dados
-              </h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Nome Completo *</label>
-                  <input 
-                    type="text" 
-                    value={buyerInfo.name}
-                    onChange={e => setBuyerInfo({...buyerInfo, name: e.target.value})}
-                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                    placeholder="Como você quer ser chamado?"
-                  />
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card p-8">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="w-12 h-12 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
+                  <UserIcon className="w-6 h-6" />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">WhatsApp *</label>
-                  <input 
-                    type="text" 
-                    value={buyerInfo.whatsapp}
-                    onChange={e => setBuyerInfo({...buyerInfo, whatsapp: e.target.value})}
-                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                    placeholder="(00) 00000-0000"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Instagram (Opcional)</label>
-                  <input 
-                    type="text" 
-                    value={buyerInfo.instagram}
-                    onChange={e => setBuyerInfo({...buyerInfo, instagram: e.target.value})}
-                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                    placeholder="@seuusuario"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">CPF (Opcional)</label>
-                  <input 
-                    type="text" 
-                    value={buyerInfo.cpf}
-                    onChange={e => setBuyerInfo({...buyerInfo, cpf: e.target.value})}
-                    className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                    placeholder="000.000.000-00"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1 italic">O CPF é opcional e usado apenas para emissão do PIX.</p>
+                  <h3 className="text-xl font-bold text-slate-900">Seus Dados</h3>
+                  <p className="text-sm text-slate-500">Informe seus dados para a reserva</p>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Nome Completo *</label>
+                  <div className="relative">
+                    <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input 
+                      type="text" 
+                      value={buyerInfo.name}
+                      onChange={e => setBuyerInfo({...buyerInfo, name: e.target.value})}
+                      className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all bg-slate-50/50"
+                      placeholder="Como você quer ser chamado?"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">WhatsApp *</label>
+                  <div className="relative">
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input 
+                      type="text" 
+                      value={buyerInfo.whatsapp}
+                      onChange={e => setBuyerInfo({...buyerInfo, whatsapp: e.target.value})}
+                      className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all bg-slate-50/50"
+                      placeholder="(00) 00000-0000"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">CPF (Opcional)</label>
+                  <div className="relative">
+                    <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input 
+                      type="text" 
+                      value={buyerInfo.cpf}
+                      onChange={e => setBuyerInfo({...buyerInfo, cpf: e.target.value})}
+                      className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all bg-slate-50/50"
+                      placeholder="000.000.000-00"
+                    />
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Instagram (Opcional)</label>
+                  <div className="relative">
+                    <Instagram className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input 
+                      type="text" 
+                      value={buyerInfo.instagram}
+                      onChange={e => setBuyerInfo({...buyerInfo, instagram: e.target.value})}
+                      className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all bg-slate-50/50"
+                      placeholder="@seuusuario"
+                    />
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-6 italic text-center">Seus dados estão seguros e serão usados apenas para identificação do ganhador.</p>
             </motion.div>
           )}
 
           {step === 3 && (
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="card p-8 text-center">
               <div className="w-20 h-20 bg-secondary/10 text-secondary rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle2 className="w-12 h-12" />
+                <div className="relative">
+                  <CreditCard className="w-10 h-10" />
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white animate-pulse" />
+                </div>
               </div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-2">Pagamento Gerado!</h3>
-              <p className="text-slate-600 mb-8">Escaneie o QR Code ou copie o código PIX para finalizar sua compra.</p>
+              <h3 className="text-2xl font-bold text-slate-900 mb-2">Aguardando Pagamento</h3>
+              <p className="text-slate-600 mb-8">Escaneie o QR Code ou copie o código PIX. O sistema confirmará automaticamente.</p>
               
               {pixData && (
                 <div className="space-y-6 mb-8">
-                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm inline-block mx-auto">
-                    <img id="pix-qrcode" src={pixData.qrcode} alt="PIX QR Code" className="w-48 h-48 mx-auto" referrerPolicy="no-referrer" />
+                  <div className="bg-white p-6 rounded-3xl border-2 border-slate-100 shadow-xl inline-block mx-auto">
+                    <img id="pix-qrcode" src={pixData.qrcode} alt="PIX QR Code" className="w-56 h-56 mx-auto" referrerPolicy="no-referrer" />
                   </div>
                   
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold text-slate-500 uppercase">Código Copia e Cola</p>
-                    <div className="flex gap-2">
+                  <div className="space-y-3">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Código Copia e Cola</p>
+                    <div className="flex gap-2 max-w-sm mx-auto">
                       <input 
                         readOnly 
                         value={pixData.copyPaste}
-                        className="flex-1 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl text-xs font-mono truncate"
+                        className="flex-1 bg-slate-50 border border-slate-200 px-4 py-3 rounded-2xl text-xs font-mono truncate focus:ring-2 focus:ring-primary/20 outline-none"
                       />
                       <button 
                         onClick={() => {
                           navigator.clipboard.writeText(pixData.copyPaste);
                           alert("Código PIX copiado!");
                         }}
-                        className="btn-primary px-4 py-2 text-xs"
+                        className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-800 transition-all active:scale-95"
                       >
                         Copiar
                       </button>
@@ -879,11 +935,62 @@ const RaffleDetails = () => {
                 </div>
               )}
 
-              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 text-amber-700 text-sm mb-8">
-                <strong>Atenção:</strong> Seus números serão reservados automaticamente assim que o pagamento for confirmado.
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 text-emerald-700 text-sm mb-8 flex items-center gap-3">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping shrink-0" />
+                <p className="text-left leading-tight"><strong>Monitorando pagamento:</strong> Não feche esta página. Seus números serão confirmados em segundos após o pagamento.</p>
               </div>
 
-              <Link to="/" className="btn-primary inline-block w-full">Voltar ao Início</Link>
+              <button 
+                onClick={() => setStep(2)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm transition-colors"
+              >
+                Alterar forma de pagamento ou dados
+              </button>
+            </motion.div>
+          )}
+
+          {step === 4 && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              className="card p-12 text-center relative overflow-hidden"
+            >
+              <div className="relative z-10">
+                <motion.div 
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", damping: 12 }}
+                  className="w-24 h-24 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-emerald-200"
+                >
+                  <CheckCircle2 className="w-14 h-14" />
+                </motion.div>
+                
+                <h3 className="text-3xl font-black text-slate-900 mb-4">PAGAMENTO CONFIRMADO!</h3>
+                <p className="text-xl text-slate-600 mb-8 font-medium">Boa sorte! Seus números já estão garantidos no sorteio. 🍀</p>
+                
+                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-8">
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números da Sorte</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {selectedNumbers.map(n => (
+                      <span key={n} className="w-12 h-12 bg-white border-2 border-emerald-500 text-emerald-600 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm">
+                        {n.toString().padStart(2, '0')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <Link to="/" className="btn-primary w-full py-4 text-lg shadow-xl shadow-primary/20">
+                    Voltar ao Início
+                  </Link>
+                  <p className="text-sm text-slate-400">Você também pode consultar seus números a qualquer momento usando seu WhatsApp ou CPF.</p>
+                </div>
+              </div>
+
+              {/* Success Background Effects */}
+              <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500" />
+              <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-50 rounded-full blur-3xl" />
+              <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
             </motion.div>
           )}
         </div>

@@ -8,17 +8,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { whatsapp } = req.body;
+  const { whatsapp, cpf } = req.body;
 
-  if (!whatsapp) {
-    return res.status(400).json({ success: false, message: "WhatsApp é obrigatório" });
+  if (!whatsapp && !cpf) {
+    return res.status(400).json({ success: false, message: "WhatsApp ou CPF é obrigatório" });
   }
 
   try {
     const phone = normalizePhone(whatsapp);
-    const snapshot = await db.collection("compras")
-      .where("telefone", "==", phone)
-      .get();
+    const normalizedCpf = String(cpf || "").replace(/\D/g, "");
+
+    let query: any = db.collection("compras");
+
+    if (phone && normalizedCpf) {
+      query = query.where(admin.firestore.Filter.or(
+        admin.firestore.Filter.where("telefone", "==", phone),
+        admin.firestore.Filter.where("cpf", "==", normalizedCpf)
+      ));
+    } else if (phone) {
+      query = query.where("telefone", "==", phone);
+    } else if (normalizedCpf) {
+      query = query.where("cpf", "==", normalizedCpf);
+    }
+
+    const snapshot = await query.get();
 
     if (snapshot.empty) {
       return res.json({ success: false, message: "Nenhuma compra encontrada" });
