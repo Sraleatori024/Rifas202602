@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "Raffle": {
+      "title": "Raffle",
+      "description": "A raffle campaign",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "total_numbers": { "type": "integer" },
+        "image_url": { "type": "string" },
+        "start_date": { "type": "string", "format": "date" },
+        "end_date": { "type": "string", "format": "date" },
+        "indeterminate_date": { "type": "boolean" },
+        "min_purchase_quantity": { "type": "integer" },
+        "min_revenue_goal": { "type": "number" },
+        "min_sales_percent": { "type": "integer" },
+        "status": { "type": "string", "enum": ["active", "ended", "drawn"] },
+        "active": { "type": "integer" },
+        "progress_percent": { "type": "integer" },
+        "sold_count": { "type": "integer" },
+        "revenue": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "price", "total_numbers", "status"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "A purchase of raffle numbers",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "telefone": { "type": "string" },
+        "cpf": { "type": "string" },
+        "rifaId": { "type": "string" },
+        "numero": { "type": "array", "items": { "type": "integer" } },
+        "valor": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "expired"] },
+        "identifier": { "type": "string" },
+        "pix_code": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "paid_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["rifaId", "numero", "valor", "status"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A user of the system",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "whatsapp": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "client"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["role"]
+    }
+  },
+  "firestore": {
+    "/raffles/{raffleId}": {
+      "schema": "Raffle",
+      "description": "Raffle campaigns"
+    },
+    "/raffles/{raffleId}/numbers/{numberId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "number": { "type": "integer" },
+          "status": { "type": "string", "enum": ["available", "pending", "confirmed"] },
+          "buyer_name": { "type": "string" },
+          "buyer_whatsapp": { "type": "string" },
+          "reserved_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "Numbers for a specific raffle"
+    },
+    "/compras/{purchaseId}": {
+      "schema": "Purchase",
+      "description": "Purchases made by customers"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    }
+  }
+}

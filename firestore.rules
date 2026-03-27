@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         request.auth.token.email == "nickinicolas380@gmail.com");
+    }
+
+    // Raffles: Everyone can read, only admin can write
+    match /raffles/{raffleId} {
+      allow read: if true;
+      allow write: if isAdmin();
+      
+      match /numbers/{numberId} {
+        allow read: if true;
+        allow write: if true; // Needed for reservation during purchase
+      }
+    }
+
+    // Purchases (Compras): Admin can read/write all, users can read their own, anyone can create
+    match /compras/{purchaseId} {
+      allow read: if isAdmin() || (resource != null && (resource.data.telefone == request.auth.uid || resource.data.cpf == request.auth.token.cpf));
+      // Allow public get if they have the ID (for success screen)
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if true;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Users: Admin can read/write all, users can read/write their own
+    match /users/{userId} {
+      allow read: if isAdmin() || request.auth.uid == userId;
+      allow write: if isAdmin() || request.auth.uid == userId;
+    }
+
+    // Draws: Everyone can read, only admin can write
+    match /draws/{drawId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

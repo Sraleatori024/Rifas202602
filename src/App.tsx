@@ -552,6 +552,7 @@ const RaffleDetails = () => {
       
       const total = nums.length;
       const confirmed = nums.filter(n => n.status === 'confirmed').length;
+      console.log(`Rifa ${raffleId}: ${confirmed} números confirmados de ${total}`);
       setStats({ total, sold: confirmed, available: total - confirmed });
       setLoading(false);
     }, (error) => {
@@ -845,23 +846,24 @@ const RaffleDetails = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
-                  {numbers.map(n => (
-                    <button
-                      key={n.id}
-                      disabled={n.status !== 'available'}
-                      onClick={() => toggleNumber(n.number)}
-                      className={cn(
-                        "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                        (n.status === 'confirmed' || n.status === 'pending') ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
-                        selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
-                        "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
-                      )}
-                    >
-                      {n.number.toString().padStart(2, '0')}
-                    </button>
-                  ))}
-                </div>
+                  <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
+                    {numbers.map(n => (
+                      <button
+                        key={n.id}
+                        disabled={n.status !== 'available'}
+                        onClick={() => toggleNumber(n.number)}
+                        className={cn(
+                          "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
+                          n.status === 'confirmed' ? "bg-emerald-100 text-emerald-600 cursor-not-allowed border border-emerald-200" :
+                          n.status === 'pending' ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
+                          selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
+                          "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
+                        )}
+                      >
+                        {n.number.toString().padStart(2, '0')}
+                      </button>
+                    ))}
+                  </div>
               </div>
             )
           )}
@@ -1435,6 +1437,7 @@ const AdminDashboard = () => {
   });
 
   const [compras, setCompras] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'raffles' | 'customers'>('raffles');
   const [globalStats, setGlobalStats] = useState({
     totalRevenue: 0,
     activeCustomers: 0,
@@ -1459,6 +1462,7 @@ const AdminDashboard = () => {
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const comprasData = snapshot.docs.map(d => d.data());
+      console.log(`Admin: ${comprasData.length} compras pagas carregadas.`);
       setCompras(comprasData);
       
       // 1. Total Arrecadado: Soma do campo 'valor' de todas as compras pagas.
@@ -1772,13 +1776,35 @@ const AdminDashboard = () => {
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Gerenciar Rifas</h1>
-          <p className="text-slate-500">Crie e acompanhe suas campanhas</p>
+          <h1 className="text-3xl font-bold text-slate-900">Gerenciar Sistema</h1>
+          <p className="text-slate-500">Acompanhe suas campanhas e clientes</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-          <Plus className="w-5 h-5" />
-          Nova Rifa
-        </button>
+        <div className="flex gap-4">
+          <div className="bg-slate-100 p-1 rounded-xl flex">
+            <button 
+              onClick={() => setActiveTab('raffles')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-bold transition-all",
+                activeTab === 'raffles' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              Rifas
+            </button>
+            <button 
+              onClick={() => setActiveTab('customers')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-bold transition-all",
+                activeTab === 'customers' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              Clientes
+            </button>
+          </div>
+          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="w-5 h-5" />
+            Nova Rifa
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
@@ -1805,7 +1831,7 @@ const AdminDashboard = () => {
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-sm text-slate-500 font-bold uppercase">Clientes Ativos</p>
+            <p className="text-sm text-slate-500 font-bold uppercase">Clientes Únicos</p>
             <p className="text-2xl font-black text-slate-900">{globalStats.activeCustomers}</p>
           </div>
         </div>
@@ -1820,7 +1846,8 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      <div className="card overflow-hidden">
+      {activeTab === 'raffles' ? (
+        <div className="card overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
@@ -1907,6 +1934,57 @@ const AdminDashboard = () => {
           </tbody>
         </table>
       </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Cliente</th>
+                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">WhatsApp</th>
+                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">CPF</th>
+                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Total Gasto</th>
+                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Números</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {Array.from(new Set(compras.map(c => c.telefone))).map(tel => {
+                  const clientPurchases = compras.filter(c => c.telefone === tel);
+                  const name = clientPurchases[0]?.nome || "Sem nome";
+                  const cpf = clientPurchases[0]?.cpf || "Sem CPF";
+                  const totalSpent = clientPurchases.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+                  const totalNumbers = clientPurchases.reduce((acc, curr) => acc + (Array.isArray(curr.numero) ? curr.numero.length : 0), 0);
+
+                  return (
+                    <tr key={tel} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center font-bold">
+                            {name.charAt(0)}
+                          </div>
+                          <span className="font-bold text-slate-900">{name}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600 font-medium">{tel}</td>
+                      <td className="px-6 py-4 text-slate-600 font-medium">{cpf}</td>
+                      <td className="px-6 py-4">
+                        <span className="font-black text-emerald-600">
+                          R$ {totalSpent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-black">
+                          {totalNumbers} números
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {drawState.active && drawState.raffle && (
         <DrawAnimation 

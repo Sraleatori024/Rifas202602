@@ -29,6 +29,23 @@ if (!admin.apps.length) {
 if (admin.apps.length) {
   db = admin.firestore();
   auth = admin.auth();
+} else {
+  // Fallback se as variáveis de ambiente estiverem presentes mas o app não foi inicializado
+  if (privateKey && clientEmail && projectId) {
+    try {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        }),
+      });
+      db = admin.firestore();
+      auth = admin.auth();
+    } catch (e) {
+      console.error("Erro no fallback de inicialização:", e);
+    }
+  }
 }
 
 // Use a getter or handle the case where it's not initialized
