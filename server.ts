@@ -11,16 +11,20 @@ const __dirname = path.dirname(__filename);
 // 3) Corrigir telefone para remover () e espaços
 const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
 
-// 4) Validar CPF com 11 números
+// 4) Validar CPF com 11 números (opcional, retorna fallback se inválido)
 const normalizeCPF = (cpf: string) => {
   const clean = String(cpf || "").replace(/\D/g, "");
-  return clean.length === 11 ? clean : null;
+  return clean.length === 11 ? clean : "00000000000";
 };
 
 // 1) Criar função para gerar token automaticamente
 async function generateToken() {
-  const clientId = process.env.SYNC_CLIENT_ID || "89210cff-1a37-4cd0-825d-45fecd8e77bb";
-  const clientSecret = process.env.SYNC_CLIENT_SECRET || "dadc1b2c-86ee-4256-845a-d1511de315bb";
+  const clientId = process.env.SYNC_CLIENT_ID;
+  const clientSecret = process.env.SYNC_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error("Configuração de API SyncPayments (SYNC_CLIENT_ID ou SYNC_CLIENT_SECRET) ausente.");
+  }
 
   console.log("Gerando token de acesso SyncPayments...");
   
@@ -76,8 +80,8 @@ async function createCashIn(token: string, payload: any) {
     const data = result.data || result;
     
     return {
-      pix_code: data.pix_code || "",
-      identifier: data.identifier || ""
+      pix_code: data.pix_code || data.pix_qrcode || data.qrcode || "",
+      identifier: data.identifier || data.id || ""
     };
   } catch (error: any) {
     console.error("Erro no Cash-In:", error.message);
@@ -111,12 +115,6 @@ async function startServer() {
     }
 
     const normalizedCPF = normalizeCPF(buyer.cpf);
-    if (!normalizedCPF) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "CPF inválido. Deve conter 11 dígitos." 
-      });
-    }
 
     try {
       const db = getDb();
@@ -147,32 +145,48 @@ async function startServer() {
           totalAmount = numbers.length * unitPrice;
         }
 
-        // Check if all requested numbers are available
-        const selectedNumbersSnap = await transaction.get(
-          numbersRef.where("number", "in", numbers)
-        );
-
+        // Check if all requested numbers are available (handling Firestore 30-limit for 'in' query)
         const unavailableNumbers: number[] = [];
-        selectedNumbersSnap.forEach((doc) => {
-          const data = doc.data();
-          if (data.status !== "available") {
-            unavailableNumbers.push(data.number);
-          }
-        });
+        const numbersChunks = [];
+        for (let i = 0; i < numbers.length; i += 30) {
+          numbersChunks.push(numbers.slice(i, i + 30));
+        }
+
+        for (const chunk of numbersChunks) {
+          const selectedNumbersSnap = await transaction.get(
+            numbersRef.where("number", "in", chunk)
+          );
+
+          selectedNumbersSnap.forEach((doc) => {
+            const data = doc.data();
+            if (data.status !== "available") {
+              unavailableNumbers.push(data.number);
+            }
+          });
+        }
 
         if (unavailableNumbers.length > 0) {
           throw new Error(`Os seguintes números já foram reservados ou comprados: ${unavailableNumbers.join(", ")}`);
         }
 
         // Reserve numbers (mark as pending)
-        selectedNumbersSnap.forEach((doc) => {
-          transaction.update(doc.ref, {
-            status: "pending",
-            reserved_at: admin.firestore.FieldValue.serverTimestamp(),
-            buyer_name: buyer.name,
-            buyer_whatsapp: normalizePhone(buyer.whatsapp)
+        for (const chunk of numbersChunks) {
+          const selectedNumbersSnap = await transaction.get(
+            numbersRef.where("number", "in", chunk)
+          );
+          selectedNumbersSnap.forEach((doc) => {
+            transaction.update(doc.ref, {
+              status: "pending",
+              reserved_at: admin.firestore.FieldValue.serverTimestamp(),
+              buyer_name: buyer.name,
+              buyer_whatsapp: normalizePhone(buyer.whatsapp)
+            });
           });
-        });
+        }
+
+        if (totalAmount <= 0) {
+          throw new Error("O valor total da compra deve ser maior que zero.");
+        }
 
         return { totalAmount, raffleData };
       });
@@ -191,30 +205,27 @@ async function startServer() {
         });
       }
 
-      // 3. Criar Pagamento na SyncPayments
-      const payload = {
-        amount: Number(totalAmount.toFixed(2)),
-        description: `Compra de rifa: ${raffleData.name || "Sorteio"}`,
-        webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
-        client: {
+    // 3. Criar Pagamento na SyncPayments
+    const rawAppUrl = process.env.APP_URL || "https://ais-dev-qe6hjdlzyao7gwzeoa7fvv-101643794289.us-east1.run.app";
+    const appUrl = rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl;
+    const payload = {
+      amount: Number(totalAmount.toFixed(2)),
+      description: `Compra de rifa: ${raffleData.name || "Sorteio"}`,
+      webhook_url: `${appUrl}/api/webhook-syncpay`,
+      client: {
           name: buyer.name,
           cpf: normalizedCPF,
           email: buyer.email || "cliente@exemplo.com",
           phone: normalizePhone(buyer.whatsapp)
-        },
-        // Opcional: split se necessário
-        split: [
-          {
-            percentage: 10,
-            user_id: "9f3c5b3a-41bc-4322-90e6-a87a98eefeca"
-          }
-        ]
+        }
       };
 
-      let syncPayResult;
-      try {
-        syncPayResult = await createCashIn(accessToken, payload);
-      } catch (apiError: any) {
+    let syncPayResult;
+    try {
+      console.log("Enviando payload para SyncPayments:", JSON.stringify(payload, null, 2));
+      syncPayResult = await createCashIn(accessToken, payload);
+      console.log("Resultado SyncPayments:", syncPayResult);
+    } catch (apiError: any) {
         // 9) Caso a API retorne erro, retornar no JSON para o frontend
         return res.status(500).json({
           success: false,
