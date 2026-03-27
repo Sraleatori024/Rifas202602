@@ -379,7 +379,7 @@ async function startServer() {
         const selectedNumbersSnap = await numbersRef.where("number", "in", chunk).get();
         for (const doc of selectedNumbersSnap.docs) {
           batch.update(doc.ref, {
-            status: 'sold',
+            status: 'confirmed',
             buyer_name: nome,
             buyer_whatsapp: telefone,
             updated_at: admin.firestore.FieldValue.serverTimestamp()

@@ -25,6 +25,7 @@ import {
   Unlock,
   Trash2,
   Package,
+  Hash,
   ArrowRight
 } from 'lucide-react';
 import { cn, User, Raffle, RaffleNumber, Winner } from './types';
@@ -1262,43 +1263,68 @@ const AdminDashboard = () => {
   const [compras, setCompras] = useState<any[]>([]);
   const [globalStats, setGlobalStats] = useState({
     totalRevenue: 0,
-    activeCustomers: 0
+    activeCustomers: 0,
+    totalSold: 0
   });
 
   useEffect(() => {
+    // Carrega a lista de rifas para exibição no painel
     const q = query(collection(db, "raffles"), orderBy("created_at", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setRaffles(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as any);
     }, (error) => {
-      console.error("Admin dashboard raffles error:", error);
+      console.error("Erro ao carregar rifas no painel admin:", error);
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
+    // Buscamos apenas as compras com status "paid" (pagas/confirmadas)
+    // Isso garante que as estatísticas reflitam apenas transações reais e finalizadas.
     const q = query(collection(db, "compras"), where("status", "==", "paid"));
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const comprasData = snapshot.docs.map(d => d.data());
       setCompras(comprasData);
       
-      const totalRevenue = comprasData.reduce((acc, curr) => acc + (curr.valor || 0), 0);
-      const uniqueCustomers = new Set(comprasData.map(c => c.telefone || c.cpf)).size;
+      // 1. Total Arrecadado: Soma do campo 'valor' de todas as compras pagas.
+      const totalRevenue = comprasData.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+      
+      // 2. Números Vendidos: Soma da quantidade de números em cada compra paga.
+      const totalSold = comprasData.reduce((acc, curr) => acc + (Array.isArray(curr.numero) ? curr.numero.length : 0), 0);
+      
+      // 3. Quantidade de Clientes: Contagem de clientes únicos (por telefone) com pelo menos uma compra paga.
+      const uniqueCustomers = new Set(comprasData.map(c => c.telefone).filter(Boolean)).size;
       
       setGlobalStats({
         totalRevenue,
-        activeCustomers: uniqueCustomers
+        activeCustomers: uniqueCustomers,
+        totalSold
       });
     }, (error) => {
-      console.error("Admin dashboard compras error:", error);
+      console.error("Erro ao carregar estatísticas do painel:", error);
     });
+    
     return () => unsubscribe();
   }, []);
 
+  /**
+   * Função modular para calcular estatísticas por rifa específica.
+   * Filtra os dados de compras já carregados em memória para evitar novas leituras.
+   */
   const getRaffleStats = (raffleId: string) => {
+    // Filtramos as compras pagas que pertencem a esta rifa
     const raffleCompras = compras.filter(c => c.rifaId === raffleId);
-    const revenue = raffleCompras.reduce((acc, curr) => acc + (curr.valor || 0), 0);
-    const soldNumbers = raffleCompras.reduce((acc, curr) => acc + (curr.numero?.length || 0), 0);
-    const uniqueCustomers = new Set(raffleCompras.map(c => c.telefone || c.cpf)).size;
+    
+    // Arrecadação da rifa (Soma dos valores pagos)
+    const revenue = raffleCompras.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+    
+    // Números vendidos da rifa (Soma da quantidade de números em cada compra)
+    const soldNumbers = raffleCompras.reduce((acc, curr) => acc + (Array.isArray(curr.numero) ? curr.numero.length : 0), 0);
+    
+    // Clientes únicos da rifa (Contagem por telefone)
+    const uniqueCustomers = new Set(raffleCompras.map(c => c.telefone).filter(Boolean)).size;
+    
     return { revenue, soldNumbers, uniqueCustomers };
   };
 
@@ -1370,11 +1396,11 @@ const AdminDashboard = () => {
     }
   };
 
-  const isGoalMet = (raffle: Raffle) => {
+  const isGoalMet = (raffle: Raffle, stats?: { revenue: number, soldNumbers: number }) => {
     if (raffle.draw_manually_released) return true;
     
-    const revenue = raffle.revenue || 0;
-    const soldCount = raffle.sold_count || 0;
+    const revenue = stats ? stats.revenue : (raffle.revenue || 0);
+    const soldCount = stats ? stats.soldNumbers : (raffle.sold_count || 0);
     const totalNumbers = raffle.total_numbers || 1;
     const salesPercent = (soldCount / totalNumbers) * 100;
     
@@ -1416,7 +1442,7 @@ const AdminDashboard = () => {
   };
 
   const handleDraw = async (raffle: Raffle) => {
-    if (!isGoalMet(raffle)) {
+    if (!isGoalMet(raffle, getRaffleStats(raffle.id))) {
       alert("Meta mínima ainda não atingida. Sorteio bloqueado.");
       return;
     }
@@ -1581,7 +1607,7 @@ const AdminDashboard = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
         <div className="card p-6 flex items-center gap-4">
           <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
             <Ticket className="w-6 h-6" />
@@ -1607,6 +1633,15 @@ const AdminDashboard = () => {
           <div>
             <p className="text-sm text-slate-500 font-bold uppercase">Clientes Ativos</p>
             <p className="text-2xl font-black text-slate-900">{globalStats.activeCustomers}</p>
+          </div>
+        </div>
+        <div className="card p-6 flex items-center gap-4">
+          <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+            <Hash className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-sm text-slate-500 font-bold uppercase">Números Vendidos</p>
+            <p className="text-2xl font-black text-slate-900">{globalStats.totalSold}</p>
           </div>
         </div>
       </div>
@@ -1674,9 +1709,9 @@ const AdminDashboard = () => {
                         onClick={() => handleDraw(raffle)} 
                         className={cn(
                           "p-2 transition-colors",
-                          isGoalMet(raffle) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
+                          isGoalMet(raffle, raffleStats) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
                         )}
-                        title={isGoalMet(raffle) ? "Sortear" : "Meta não atingida"}
+                        title={isGoalMet(raffle, raffleStats) ? "Sortear" : "Meta não atingida"}
                       >
                         <Trophy className="w-4 h-4" />
                       </button>
@@ -1686,7 +1721,7 @@ const AdminDashboard = () => {
                       {raffle.status === 'ended' && (
                         <button onClick={() => handleExtendRaffle(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Estender"><Clock className="w-4 h-4" /></button>
                       )}
-                      {!isGoalMet(raffle) && (
+                      {!isGoalMet(raffle, raffleStats) && (
                         <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
                       )}
                       <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
