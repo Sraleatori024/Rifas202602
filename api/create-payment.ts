@@ -8,15 +8,20 @@ const normalizeCPF = (cpf: string) => {
 };
 
 async function generateToken() {
-  const clientId = process.env.SYNC_CLIENT_ID;
-  const clientSecret = process.env.SYNC_CLIENT_SECRET;
+  const clientId = process.env.PIX_API_CLIENT_ID || process.env.SYNC_CLIENT_ID;
+  const clientSecret = process.env.PIX_API_CLIENT_SECRET || process.env.SYNC_CLIENT_SECRET;
+  const apiUrl = process.env.PIX_API_URL || "https://api.syncpayments.com.br";
+
+  console.log("API URL:", apiUrl);
+  console.log("API CLIENT_ID definido:", !!clientId);
+  console.log("API CLIENT_SECRET definido:", !!clientSecret);
 
   if (!clientId || !clientSecret) {
-    throw new Error("Configuração de API SyncPayments (SYNC_CLIENT_ID ou SYNC_CLIENT_SECRET) ausente.");
+    throw new Error("Configuração de API SyncPayments (PIX_API_CLIENT_ID ou PIX_API_CLIENT_SECRET) ausente.");
   }
 
   try {
-    const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/auth-token", {
+    const response = await fetch(`${apiUrl}/api/partner/v1/auth-token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -42,6 +47,7 @@ async function generateToken() {
 }
 
 async function createCashIn(token: string, payload: any) {
+  const apiUrl = process.env.PIX_API_URL || "https://api.syncpayments.com.br";
   // Validações robustas antes do envio
   if (!token) throw new Error("Token de autorização ausente");
   if (!payload.amount || payload.amount <= 0) throw new Error("Valor da transação deve ser positivo");
@@ -51,7 +57,7 @@ async function createCashIn(token: string, payload: any) {
   console.log("Payload Enviado:", JSON.stringify(payload, null, 2));
 
   try {
-    const response = await fetch("https://api.syncpayments.com.br/api/partner/v1/cash-in", {
+    const response = await fetch(`${apiUrl}/api/partner/v1/cash-in`, {
       method: "POST",
       headers: {
         "Accept": "application/json",
