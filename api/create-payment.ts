@@ -2,9 +2,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { db, admin } from '../lib/firebase-admin.js';
 
 const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
-const normalizeCPF = (cpf: string) => {
-  const clean = cpf ? String(cpf).replace(/\D/g, "") : "";
-  return clean.length === 11 ? clean : "00000000000";
+const normalizeCPF = (cpf?: string) => {
+  if (!cpf) return null;
+  const clean = String(cpf).replace(/\D/g, "");
+  return clean.length === 11 ? clean : null;
 };
 
 async function generateToken() {
@@ -168,20 +169,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 4. Create Cash-In using the token
+    const rawAppUrl = process.env.APP_URL;
+    if (!rawAppUrl) {
+      return res.status(500).json({
+        success: false,
+        code: "APP_URL_NAO_CONFIGURADA",
+        message: "A URL da aplicação não está configurada no ambiente."
+      });
+    }
+    const appUrl = rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl;
     const payload = {
       amount: Number(totalAmount),
       description: `Pagamento Rifa: ${raffleData.name || "Sorteio"}`,
-      webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
+      webhook_url: `${appUrl}/api/webhook-syncpay`,
       client: {
         name: buyer.name || "Cliente",
         phone: normalizePhone(buyer.whatsapp),
         email: buyer.email || "cliente@exemplo.com",
-        cpf: normalizeCPF(buyer.cpf)
+        cpf: normalizeCPF(buyer.cpf) || undefined
       }
     };
 
     let syncPayResult;
     try {
+      console.log("CPF enviado:", payload.client.cpf);
+      console.log("Webhook URL:", payload.webhook_url);
       syncPayResult = await createCashIn(accessToken, payload);
     } catch (apiError: any) {
       return res.status(500).json({
