@@ -9,12 +9,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 3) Corrigir telefone para remover () e espaços
-const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
+const normalizePhone = (phone: string) => {
+  const clean = String(phone || "").replace(/\D/g, "");
+  return clean;
+};
 
-// 4) Validar CPF com 11 números (opcional, retorna fallback se inválido)
+// 4) Validar CPF com 11 números
 const normalizeCPF = (cpf: string) => {
   const clean = String(cpf || "").replace(/\D/g, "");
-  return clean.length === 11 ? clean : "00000000000";
+  return clean;
 };
 
 // 1) Criar função para gerar token automaticamente
@@ -106,15 +109,34 @@ async function startServer() {
   app.post("/api/create-payment", async (req, res) => {
     const { raffleId, numbers, buyer, packageId } = req.body;
     
-    // Validação básica de entrada
+    // 1. DADOS_INCOMPLETOS
     if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
       return res.status(400).json({ 
         success: false, 
+        code: "DADOS_INCOMPLETOS",
         message: "Dados incompletos (Nome e WhatsApp são obrigatórios)" 
       });
     }
 
+    // 2. TELEFONE_INVALIDO
+    const normalizedPhone = normalizePhone(buyer.whatsapp);
+    if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+      return res.status(400).json({
+        success: false,
+        code: "TELEFONE_INVALIDO",
+        message: "Número de telefone inválido. Use o formato (DDD) 99999-9999"
+      });
+    }
+
+    // 3. CPF_INVALIDO (Se enviado, deve ter 11 dígitos)
     const normalizedCPF = normalizeCPF(buyer.cpf);
+    if (buyer.cpf && normalizedCPF.length !== 11) {
+      return res.status(400).json({
+        success: false,
+        code: "CPF_INVALIDO",
+        message: "CPF inválido. Deve conter 11 dígitos."
+      });
+    }
 
     try {
       const db = getDb();
@@ -193,13 +215,14 @@ async function startServer() {
 
       const { totalAmount, raffleData } = result;
 
-      // 2. Gerar Token SyncPayments
+      // 4. API_PAGAMENTO_ERRO
       let accessToken;
       try {
         accessToken = await generateToken();
       } catch (authError: any) {
         return res.status(401).json({ 
           success: false, 
+          code: "API_PAGAMENTO_ERRO",
           message: "Erro de autenticação na API de pagamentos", 
           details: authError.message 
         });
@@ -220,15 +243,16 @@ async function startServer() {
         }
       };
 
-    let syncPayResult;
-    try {
-      console.log("Enviando payload para SyncPayments:", JSON.stringify(payload, null, 2));
-      syncPayResult = await createCashIn(accessToken, payload);
-      console.log("Resultado SyncPayments:", syncPayResult);
-    } catch (apiError: any) {
-        // 9) Caso a API retorne erro, retornar no JSON para o frontend
+      // 5. PIX_GERACAO_ERRO
+      let syncPayResult;
+      try {
+        console.log("Enviando payload para SyncPayments:", JSON.stringify(payload, null, 2));
+        syncPayResult = await createCashIn(accessToken, payload);
+        console.log("Resultado SyncPayments:", syncPayResult);
+      } catch (apiError: any) {
         return res.status(500).json({
           success: false,
+          code: "PIX_GERACAO_ERRO",
           message: apiError.message || "Erro ao gerar PIX na SyncPayments"
         });
       }
@@ -236,7 +260,11 @@ async function startServer() {
       const { pix_code, identifier } = syncPayResult;
 
       if (!pix_code) {
-        throw new Error("Código PIX não retornado pela API");
+        return res.status(500).json({
+          success: false,
+          code: "PIX_GERACAO_ERRO",
+          message: "Código PIX não retornado pela API"
+        });
       }
 
       // 6) Gerar QR Code automaticamente usando a biblioteca qrcode
@@ -271,6 +299,7 @@ async function startServer() {
       console.error("Erro ao criar pagamento:", error);
       res.status(500).json({ 
         success: false, 
+        code: "ERRO_INTERNO",
         message: "Erro interno ao processar pagamento", 
         details: error.message 
       });
@@ -368,10 +397,24 @@ async function startServer() {
   // Consultar Números
   app.post("/api/consultar-numeros", async (req, res) => {
     const { whatsapp } = req.body;
-    if (!whatsapp) return res.status(400).json({ success: false, message: "WhatsApp é obrigatório" });
+    if (!whatsapp) {
+      return res.status(400).json({ 
+        success: false, 
+        code: "DADOS_INCOMPLETOS",
+        message: "WhatsApp é obrigatório" 
+      });
+    }
 
     try {
       const phone = normalizePhone(whatsapp);
+      if (phone.length < 10 || phone.length > 11) {
+        return res.status(400).json({
+          success: false,
+          code: "TELEFONE_INVALIDO",
+          message: "Número de telefone inválido."
+        });
+      }
+
       const snapshot = await getDb().collection("compras")
         .where("telefone", "==", phone)
         .get();
@@ -401,7 +444,11 @@ async function startServer() {
       });
     } catch (error) {
       console.error("Consult Error:", error);
-      res.status(500).json({ success: false, message: "Erro ao consultar números." });
+      res.status(500).json({ 
+        success: false, 
+        code: "ERRO_INTERNO",
+        message: "Erro ao consultar números." 
+      });
     }
   });
 

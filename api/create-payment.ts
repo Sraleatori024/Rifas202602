@@ -95,12 +95,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { raffleId, numbers, buyer } = req.body;
 
-    if (!raffleId || !numbers || !buyer) {
-      return res.status(400).json({ error: "Dados da requisição inválidos." });
+    // 1. DADOS_INCOMPLETOS
+    if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
+      return res.status(400).json({ 
+        success: false, 
+        code: "DADOS_INCOMPLETOS",
+        message: "Dados incompletos (Nome e WhatsApp são obrigatórios)" 
+      });
     }
 
-    if (!buyer.whatsapp) {
-      return res.status(400).json({ error: "WhatsApp do comprador inválido." });
+    // 2. TELEFONE_INVALIDO
+    const normalizedPhone = normalizePhone(buyer.whatsapp);
+    if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+      return res.status(400).json({
+        success: false,
+        code: "TELEFONE_INVALIDO",
+        message: "Número de telefone inválido. Use o formato (DDD) 99999-9999"
+      });
+    }
+
+    // 3. CPF_INVALIDO (Se enviado, deve ter 11 dígitos)
+    const normalizedCPF = normalizeCPF(buyer.cpf);
+    if (buyer.cpf && normalizedCPF.length !== 11) {
+      return res.status(400).json({
+        success: false,
+        code: "CPF_INVALIDO",
+        message: "CPF inválido. Deve conter 11 dígitos."
+      });
     }
 
     // 1. Handle User (Simple System)
@@ -133,7 +154,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       accessToken = await generateToken();
     } catch (authError: any) {
       return res.status(401).json({ 
-        error: "Erro ao autenticar na SyncPayments", 
+        success: false,
+        code: "API_PAGAMENTO_ERRO",
+        message: "Erro ao autenticar na SyncPayments", 
         details: authError.message 
       });
     }
@@ -156,12 +179,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       syncPayResult = await createCashIn(accessToken, payload);
     } catch (apiError: any) {
       return res.status(500).json({
-        error: "Erro ao gerar cobrança PIX",
+        success: false,
+        code: "PIX_GERACAO_ERRO",
+        message: "Erro ao gerar cobrança PIX",
         details: apiError.message
       });
     }
 
     const { pix_code, paymentCodeBase64, identifier } = syncPayResult;
+
+    if (!pix_code) {
+      return res.status(500).json({
+        success: false,
+        code: "PIX_GERACAO_ERRO",
+        message: "Código PIX não retornado pela API"
+      });
+    }
 
     // 5. Save compra to Firebase
     const compraRef = db.collection("compras").doc(identifier);
@@ -187,7 +220,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (error: any) {
     console.error("Error in create-payment:", error);
     return res.status(500).json({ 
-      error: "Erro interno ao processar pagamento.", 
+      success: false,
+      code: "ERRO_INTERNO",
+      message: "Erro interno ao processar pagamento.", 
       details: error.message 
     });
   }
