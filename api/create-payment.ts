@@ -99,14 +99,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Body vazio." });
     }
 
-    const { raffleId, numbers, buyer } = req.body;
+    const { raffleId, numbers: requestedNumbers, buyer, packageId } = req.body;
 
     // 1. DADOS_INCOMPLETOS
-    if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
+    if (!raffleId || (!requestedNumbers?.length && !packageId) || !buyer || !buyer.whatsapp || !buyer.name) {
       return res.status(400).json({ 
         success: false, 
         code: "DADOS_INCOMPLETOS",
-        message: "Dados incompletos (Nome e WhatsApp são obrigatórios)" 
+        message: "Dados incompletos (Nome, WhatsApp e Números/Pacote são obrigatórios)" 
       });
     }
 
@@ -131,28 +131,110 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 1. Handle User (Simple System)
-    const userRef = db.collection("users").doc(buyer.whatsapp);
+    const userRef = db.collection("users").doc(normalizePhone(buyer.whatsapp));
     const userSnap = await userRef.get();
     
     if (!userSnap.exists) {
       await userRef.set({
         name: buyer.name || "Cliente",
-        whatsapp: buyer.whatsapp,
+        whatsapp: normalizePhone(buyer.whatsapp),
         instagram: buyer.instagram || "",
         created_at: admin.firestore.FieldValue.serverTimestamp()
       });
     }
 
     const raffleRef = db.collection("raffles").doc(raffleId);
-    const raffleSnap = await raffleRef.get();
-    
-    if (!raffleSnap.exists) {
-      return res.status(404).json({ error: "Rifa não encontrada." });
-    }
+    const numbersRef = raffleRef.collection("numbers");
 
-    const raffleData = raffleSnap.data()!;
-    const unitPrice = raffleData.price || 0;
-    const totalAmount = numbers.length * unitPrice;
+    // Use a transaction to check and reserve numbers atomically
+    const result = await db.runTransaction(async (transaction) => {
+      const raffleSnap = await transaction.get(raffleRef);
+      if (!raffleSnap.exists) {
+        throw new Error("Rifa não encontrada.");
+      }
+
+      const raffleData = raffleSnap.data()!;
+      let totalAmount = 0;
+      let finalNumbers: number[] = [];
+      let quantityNeeded = 0;
+
+      if (packageId) {
+        const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
+        if (!pkg) {
+          throw new Error("Pacote não encontrado.");
+        }
+        quantityNeeded = pkg.quantity;
+        if (requestedNumbers?.length && requestedNumbers.length !== pkg.quantity) {
+          throw new Error("Quantidade de números não corresponde ao pacote.");
+        }
+        totalAmount = pkg.price;
+      } else {
+        const unitPrice = raffleData.price || 0;
+        quantityNeeded = requestedNumbers.length;
+        totalAmount = quantityNeeded * unitPrice;
+      }
+
+      const snapshotsToUpdate: admin.firestore.QueryDocumentSnapshot[] = [];
+
+      if (requestedNumbers?.length) {
+        // Check specific numbers requested by client
+        const numbersChunks = [];
+        for (let i = 0; i < requestedNumbers.length; i += 30) {
+          numbersChunks.push(requestedNumbers.slice(i, i + 30));
+        }
+
+        for (const chunk of numbersChunks) {
+          const selectedNumbersSnap = await transaction.get(
+            numbersRef.where("number", "in", chunk)
+          );
+
+          selectedNumbersSnap.forEach((doc) => {
+            const data = doc.data();
+            if (data.status !== "available") {
+              throw new Error(`O número ${data.number} já foi reservado ou comprado.`);
+            }
+            snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
+            finalNumbers.push(data.number);
+          });
+        }
+
+        if (finalNumbers.length !== requestedNumbers.length) {
+          throw new Error("Alguns números solicitados não foram encontrados.");
+        }
+      } else {
+        // Automatic selection for package
+        const availableSnap = await transaction.get(
+          numbersRef.where("status", "==", "available").limit(quantityNeeded)
+        );
+
+        if (availableSnap.size < quantityNeeded) {
+          throw new Error("Não há números disponíveis suficientes para este pacote.");
+        }
+
+        availableSnap.forEach((doc) => {
+          snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
+          finalNumbers.push(doc.data().number);
+        });
+      }
+
+      // Reserve numbers (mark as pending)
+      for (const docSnap of snapshotsToUpdate) {
+        transaction.update(docSnap.ref, {
+          status: "pending",
+          reserved_at: admin.firestore.FieldValue.serverTimestamp(),
+          buyer_name: buyer.name,
+          buyer_whatsapp: normalizePhone(buyer.whatsapp)
+        });
+      }
+
+      if (totalAmount <= 0) {
+        throw new Error("O valor total da compra deve ser maior que zero.");
+      }
+
+      return { totalAmount, raffleData, finalNumbers };
+    });
+
+    const { totalAmount, raffleData, finalNumbers } = result;
 
     // 3. Get Auth Token from SyncPayments
     let accessToken;
@@ -168,10 +250,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 4. Create Cash-In using the token
+    const rawAppUrl = process.env.APP_URL;
+    if (!rawAppUrl) {
+      return res.status(500).json({
+        success: false,
+        code: "APP_URL_NAO_CONFIGURADA",
+        message: "A URL da aplicação não está configurada no ambiente."
+      });
+    }
+    const appUrl = rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl;
     const payload = {
       amount: Number(totalAmount),
       description: `Pagamento Rifa: ${raffleData.name || "Sorteio"}`,
-      webhook_url: `${process.env.APP_URL}/api/webhook-syncpay`,
+      webhook_url: `${appUrl}/api/webhook-syncpay`,
       client: {
         name: buyer.name || "Cliente",
         phone: normalizePhone(buyer.whatsapp),
@@ -182,6 +273,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let syncPayResult;
     try {
+      console.log("CPF enviado:", payload.client.cpf);
+      console.log("Webhook URL:", payload.webhook_url);
       syncPayResult = await createCashIn(accessToken, payload);
     } catch (apiError: any) {
       return res.status(500).json({
@@ -211,7 +304,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       pix_code: pix_code,
       identifier: identifier,
       status: "pending",
-      numero: numbers,
+      numero: finalNumbers,
       rifaId: raffleId,
       valor: totalAmount,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -220,7 +313,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ 
       success: true, 
       pix_code: pix_code,
-      identifier: identifier
+      identifier: identifier,
+      numbers: finalNumbers,
+      valor: totalAmount,
+      cpf: payload.client.cpf
     });
 
   } catch (error: any) {

@@ -113,14 +113,15 @@ async function startServer() {
 
   // Create Payment (SyncPay PIX)
   app.post("/api/create-payment", async (req, res) => {
-    const { raffleId, numbers, buyer, packageId } = req.body;
+    const { raffleId, numbers: requestedNumbers, buyer, packageId } = req.body;
     
     // 1. DADOS_INCOMPLETOS
-    if (!raffleId || !numbers || !buyer || !buyer.whatsapp || !buyer.name) {
+    // Allow empty numbers if packageId is present
+    if (!raffleId || (!requestedNumbers?.length && !packageId) || !buyer || !buyer.whatsapp || !buyer.name) {
       return res.status(400).json({ 
         success: false, 
         code: "DADOS_INCOMPLETOS",
-        message: "Dados incompletos (Nome e WhatsApp são obrigatórios)" 
+        message: "Dados incompletos (Nome, WhatsApp e Números/Pacote são obrigatórios)" 
       });
     }
 
@@ -158,57 +159,75 @@ async function startServer() {
 
         const raffleData = raffleSnap.data()!;
         let totalAmount = 0;
+        let finalNumbers: number[] = [];
+        let quantityNeeded = 0;
 
         if (packageId) {
           const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
           if (!pkg) {
             throw new Error("Pacote não encontrado.");
           }
-          if (numbers.length !== pkg.quantity) {
+          quantityNeeded = pkg.quantity;
+          if (requestedNumbers?.length && requestedNumbers.length !== pkg.quantity) {
             throw new Error("Quantidade de números não corresponde ao pacote.");
           }
           totalAmount = pkg.price;
         } else {
           const unitPrice = raffleData.price || 0;
-          totalAmount = numbers.length * unitPrice;
+          quantityNeeded = requestedNumbers.length;
+          totalAmount = quantityNeeded * unitPrice;
         }
 
-        // Check if all requested numbers are available (handling Firestore 30-limit for 'in' query)
-        const unavailableNumbers: number[] = [];
-        const numbersChunks = [];
-        for (let i = 0; i < numbers.length; i += 30) {
-          numbersChunks.push(numbers.slice(i, i + 30));
-        }
+        const snapshotsToUpdate: admin.firestore.QueryDocumentSnapshot[] = [];
 
-        for (const chunk of numbersChunks) {
-          const selectedNumbersSnap = await transaction.get(
-            numbersRef.where("number", "in", chunk)
+        if (requestedNumbers?.length) {
+          // Check specific numbers requested by client
+          const numbersChunks = [];
+          for (let i = 0; i < requestedNumbers.length; i += 30) {
+            numbersChunks.push(requestedNumbers.slice(i, i + 30));
+          }
+
+          for (const chunk of numbersChunks) {
+            const selectedNumbersSnap = await transaction.get(
+              numbersRef.where("number", "in", chunk)
+            );
+
+            selectedNumbersSnap.forEach((doc) => {
+              const data = doc.data();
+              if (data.status !== "available") {
+                throw new Error(`O número ${data.number} já foi reservado ou comprado.`);
+              }
+              snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
+              finalNumbers.push(data.number);
+            });
+          }
+
+          if (finalNumbers.length !== requestedNumbers.length) {
+            throw new Error("Alguns números solicitados não foram encontrados.");
+          }
+        } else {
+          // Automatic selection for package
+          const availableSnap = await transaction.get(
+            numbersRef.where("status", "==", "available").limit(quantityNeeded)
           );
 
-          selectedNumbersSnap.forEach((doc) => {
-            const data = doc.data();
-            if (data.status !== "available") {
-              unavailableNumbers.push(data.number);
-            }
+          if (availableSnap.size < quantityNeeded) {
+            throw new Error("Não há números disponíveis suficientes para este pacote.");
+          }
+
+          availableSnap.forEach((doc) => {
+            snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
+            finalNumbers.push(doc.data().number);
           });
         }
 
-        if (unavailableNumbers.length > 0) {
-          throw new Error(`Os seguintes números já foram reservados ou comprados: ${unavailableNumbers.join(", ")}`);
-        }
-
         // Reserve numbers (mark as pending)
-        for (const chunk of numbersChunks) {
-          const selectedNumbersSnap = await transaction.get(
-            numbersRef.where("number", "in", chunk)
-          );
-          selectedNumbersSnap.forEach((doc) => {
-            transaction.update(doc.ref, {
-              status: "pending",
-              reserved_at: admin.firestore.FieldValue.serverTimestamp(),
-              buyer_name: buyer.name,
-              buyer_whatsapp: normalizePhone(buyer.whatsapp)
-            });
+        for (const docSnap of snapshotsToUpdate) {
+          transaction.update(docSnap.ref, {
+            status: "pending",
+            reserved_at: admin.firestore.FieldValue.serverTimestamp(),
+            buyer_name: buyer.name,
+            buyer_whatsapp: normalizePhone(buyer.whatsapp)
           });
         }
 
@@ -216,10 +235,10 @@ async function startServer() {
           throw new Error("O valor total da compra deve ser maior que zero.");
         }
 
-        return { totalAmount, raffleData };
+        return { totalAmount, raffleData, finalNumbers };
       });
 
-      const { totalAmount, raffleData } = result;
+      const { totalAmount, raffleData, finalNumbers } = result;
 
       // 4. API_PAGAMENTO_ERRO
       let accessToken;
@@ -276,12 +295,15 @@ async function startServer() {
       // 6) Gerar QR Code automaticamente usando a biblioteca qrcode
       const qrCodeBase64 = await QRCode.toDataURL(pix_code);
 
-      // 5) Retornar para o frontend: pix_code, qr_code (base64), identifier
+      // 5) Retornar para o frontend: pix_code, qr_code (base64), identifier, numbers, valor, cpf
       const responseData = {
         success: true,
         pix_code: pix_code,
         qr_code: qrCodeBase64,
-        identifier: identifier
+        identifier: identifier,
+        numbers: finalNumbers,
+        valor: totalAmount,
+        cpf: normalizedCPF || buyer.cpf || ""
       };
 
       // Salvar registro do pedido no Firestore
@@ -289,11 +311,11 @@ async function startServer() {
       await compraRef.set({
         nome: buyer.name,
         telefone: normalizePhone(buyer.whatsapp),
-        cpf: normalizedCPF || buyer.cpf || "",
+        cpf: responseData.cpf,
         pix_code: pix_code,
         identifier: identifier,
         status: "pending",
-        numero: numbers,
+        numero: finalNumbers,
         rifaId: raffleId,
         valor: totalAmount,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
