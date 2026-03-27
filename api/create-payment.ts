@@ -146,6 +146,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const raffleRef = db.collection("raffles").doc(raffleId);
     const numbersRef = raffleRef.collection("numbers");
 
+    // Generate a unique identifier for this purchase
+    const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
     // --- LAZY CLEANUP: Release expired pending numbers (10 min) ---
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const expiredSnap = await numbersRef
@@ -284,6 +287,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       amount: Number(totalAmount),
       description: `Pagamento Rifa: ${raffleData.name || "Sorteio"}`,
       webhook_url: `${appUrl}/api/webhook-syncpay`,
+      external_id: identifier,
       client: {
         name: buyer.name || "Cliente",
         phone: normalizePhone(buyer.whatsapp),
@@ -306,7 +310,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const { pix_code, paymentCodeBase64, identifier } = syncPayResult;
+    const { pix_code, paymentCodeBase64 } = syncPayResult;
 
     if (!pix_code) {
       return res.status(500).json({

@@ -150,6 +150,9 @@ async function startServer() {
       const raffleRef = db.collection("raffles").doc(raffleId);
       const numbersRef = raffleRef.collection("numbers");
 
+      // Generate a unique identifier for this purchase
+      const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
       // Use a transaction to check and reserve numbers atomically
       const result = await db.runTransaction(async (transaction) => {
         const raffleSnap = await transaction.get(raffleRef);
@@ -260,6 +263,7 @@ async function startServer() {
       amount: Number(totalAmount.toFixed(2)),
       description: `Compra de rifa: ${raffleData.name || "Sorteio"}`,
       webhook_url: `${appUrl}/api/webhook-syncpay`,
+      external_id: identifier,
       client: {
           name: buyer.name,
           cpf: normalizedCPF,
@@ -282,7 +286,7 @@ async function startServer() {
         });
       }
 
-      const { pix_code, identifier } = syncPayResult;
+      const { pix_code } = syncPayResult;
 
       if (!pix_code) {
         return res.status(500).json({
@@ -336,31 +340,36 @@ async function startServer() {
 
   // Webhook SyncPay
   app.post("/api/webhook-syncpay", async (req, res) => {
-    const { status, external_id } = req.body;
+    const { status, external_id, id } = req.body;
+    const paymentId = external_id || id;
 
-    console.log(`Webhook received: Payment ${external_id} status is ${status}`);
+    console.log(`Webhook received: Payment ${paymentId} status is ${status}`);
+    console.log("Full Webhook Body:", JSON.stringify(req.body, null, 2));
 
     if (status !== "paid") {
       return res.json({ received: true });
     }
 
-    if (!external_id) {
-      console.error("Webhook Error: external_id missing");
-      return res.status(400).json({ error: "external_id missing" });
+    if (!paymentId) {
+      console.error("Webhook Error: payment identifier missing (external_id or id)");
+      return res.status(400).json({ error: "payment identifier missing" });
     }
 
     try {
-      const paymentRef = getDb().collection("compras").doc(external_id);
+      const paymentRef = getDb().collection("compras").doc(paymentId);
       const paymentSnap = await paymentRef.get();
 
       if (!paymentSnap.exists) {
-        console.error(`Webhook Error: Compra ${external_id} not found in database.`);
+        console.error(`Webhook Error: Compra ${paymentId} not found in database.`);
         return res.status(404).json({ error: "Compra não encontrada" });
       }
 
       if (paymentSnap.data().status === "paid") {
-        console.log(`Webhook: Compra ${external_id} already processed.`);
-        return res.json({ received: true });
+        console.log(`Webhook: Compra ${paymentId} already processed.`);
+        return res.json({ 
+          success: true, 
+          message: "Pagamento já confirmado! Boa sorte 🍀" 
+        });
       }
 
       const { rifaId, numero, nome, telefone, valor } = paymentSnap.data();
@@ -369,7 +378,7 @@ async function startServer() {
       const raffleRef = getDb().collection("raffles").doc(rifaId);
       const numbersRef = raffleRef.collection("numbers");
 
-      // Update numbers to 'sold'
+      // Update numbers to 'confirmed'
       const numbersChunks = [];
       for (let i = 0; i < numero.length; i += 30) {
         numbersChunks.push(numero.slice(i, i + 30));
@@ -413,8 +422,12 @@ async function startServer() {
       }, { merge: true });
 
       await batch.commit();
-      console.log(`Payment ${external_id} processed successfully. Numbers: ${numero.join(', ')}`);
-      res.json({ success: true });
+      console.log(`Payment ${paymentId} processed successfully. Numbers: ${numero.join(', ')}`);
+      
+      res.json({ 
+        success: true, 
+        message: "Pagamento confirmado! Boa sorte 🍀" 
+      });
 
     } catch (error: any) {
       console.error("Webhook Error:", error);
@@ -424,28 +437,33 @@ async function startServer() {
 
   // Consultar Números
   app.post("/api/consultar-numeros", async (req, res) => {
-    const { whatsapp } = req.body;
-    if (!whatsapp) {
+    const { whatsapp, cpf } = req.body;
+    if (!whatsapp && !cpf) {
       return res.status(400).json({ 
         success: false, 
         code: "DADOS_INCOMPLETOS",
-        message: "WhatsApp é obrigatório" 
+        message: "WhatsApp ou CPF é obrigatório" 
       });
     }
 
     try {
-      const phone = normalizePhone(whatsapp);
-      if (phone.length < 10 || phone.length > 11) {
-        return res.status(400).json({
-          success: false,
-          code: "TELEFONE_INVALIDO",
-          message: "Número de telefone inválido."
-        });
+      const phone = whatsapp ? normalizePhone(whatsapp) : null;
+      const cleanCpf = cpf ? normalizeCPF(cpf) : null;
+
+      let query: admin.firestore.Query = getDb().collection("compras");
+
+      if (phone && cleanCpf) {
+        query = query.where(admin.firestore.Filter.or(
+          admin.firestore.Filter.where("telefone", "==", phone),
+          admin.firestore.Filter.where("cpf", "==", cleanCpf)
+        ));
+      } else if (phone) {
+        query = query.where("telefone", "==", phone);
+      } else if (cleanCpf) {
+        query = query.where("cpf", "==", cleanCpf);
       }
 
-      const snapshot = await getDb().collection("compras")
-        .where("telefone", "==", phone)
-        .get();
+      const snapshot = await query.get();
 
       if (snapshot.empty) {
         return res.json({ success: false, message: "Nenhuma compra encontrada" });
@@ -477,13 +495,9 @@ async function startServer() {
         pending: pendingNumbers,
         name: name
       });
-    } catch (error) {
-      console.error("Consult Error:", error);
-      res.status(500).json({ 
-        success: false, 
-        code: "ERRO_INTERNO",
-        message: "Erro ao consultar números." 
-      });
+    } catch (error: any) {
+      console.error("Erro ao consultar números:", error);
+      res.status(500).json({ success: false, message: "Erro ao consultar números", details: error.message });
     }
   });
 

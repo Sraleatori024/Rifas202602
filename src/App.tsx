@@ -59,6 +59,7 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
   const [isOpen, setIsOpen] = useState(false);
   const [showConsult, setShowConsult] = useState(false);
   const [phone, setPhone] = useState('');
+  const [cpf, setCpf] = useState('');
   const [consultResult, setConsultResult] = useState<any>(null);
   const [consulting, setConsulting] = useState(false);
 
@@ -68,10 +69,15 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
     setConsultResult(null);
     try {
       const normalizedPhone = phone.replace(/\D/g, '');
+      const normalizedCpf = cpf.replace(/\D/g, '');
+      
       const res = await fetch('/api/consultar-numeros', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ whatsapp: normalizedPhone })
+        body: JSON.stringify({ 
+          whatsapp: normalizedPhone || undefined,
+          cpf: normalizedCpf || undefined
+        })
       });
       const data = await res.json();
       if (data.success) {
@@ -200,34 +206,52 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
               <div className="p-6 space-y-6">
                 {!consultResult ? (
                   <form onSubmit={handleConsult} className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Seu WhatsApp</label>
-                      <div className="flex gap-2">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Seu WhatsApp</label>
                         <input 
                           type="tel" 
-                          required
                           value={phone}
                           onChange={e => setPhone(e.target.value)}
-                          className="flex-1 px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                           placeholder="(00) 00000-0000"
                         />
-                        <button type="submit" disabled={consulting} className="btn-primary px-6">
-                          {consulting ? '...' : 'Buscar'}
-                        </button>
                       </div>
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
+                        <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">ou</span></div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Seu CPF</label>
+                        <input 
+                          type="text" 
+                          value={cpf}
+                          onChange={e => setCpf(e.target.value)}
+                          className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          placeholder="000.000.000-00"
+                        />
+                      </div>
+                      <button 
+                        type="submit" 
+                        disabled={consulting || (!phone && !cpf)} 
+                        className="btn-primary w-full py-3 text-lg font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
+                      >
+                        {consulting ? 'Buscando...' : 'Buscar Meus Números'}
+                      </button>
                     </div>
                   </form>
                 ) : (
                   <div className="space-y-6">
                     <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <p className="text-xs text-slate-500 font-bold uppercase">Telefone consultado</p>
-                        <p className="font-bold text-slate-900">{phone}</p>
-                      </div>
-
-                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <p className="text-xs text-slate-500 font-bold uppercase">Nome</p>
-                        <p className="font-bold text-slate-900">{consultResult.name}</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-xs text-slate-500 font-bold uppercase">Nome</p>
+                          <p className="font-bold text-slate-900 truncate">{consultResult.name}</p>
+                        </div>
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-xs text-slate-500 font-bold uppercase">Status</p>
+                          <p className="font-bold text-emerald-600">Ativo</p>
+                        </div>
                       </div>
 
                       <div className="space-y-4">
@@ -272,7 +296,7 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                         Voltar para a rifa
                       </button>
                       <button 
-                        onClick={() => { setConsultResult(null); setPhone(''); }} 
+                        onClick={() => { setConsultResult(null); setPhone(''); setCpf(''); }} 
                         className="w-full py-2 text-sm font-bold text-slate-500 hover:text-primary transition-colors"
                       >
                         Consultar outro número
