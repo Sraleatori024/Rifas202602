@@ -116,7 +116,7 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
               className="text-slate-600 hover:text-primary font-medium transition-colors flex items-center gap-2"
             >
               <Users className="w-4 h-4" />
-              Meus Números
+              Consultar meus números
             </button>
             {user?.role === 'admin' && (
               <Link to="/admin" className="text-slate-600 hover:text-primary font-medium transition-colors">Painel Admin</Link>
@@ -163,7 +163,7 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                 onClick={() => { setShowConsult(true); setIsOpen(false); }}
                 className="w-full text-left px-3 py-2 text-slate-600 font-medium"
               >
-                Meus Números
+                Consultar meus números
               </button>
               {user?.role === 'admin' && (
                 <Link to="/admin" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-slate-600 font-medium">Painel Admin</Link>
@@ -186,54 +186,42 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
       {/* Consult Modal */}
       <AnimatePresence>
         {showConsult && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowConsult(false)}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md"
             />
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden border border-slate-100"
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/20"
             >
-              <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-white">
-                <div>
-                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Meus Números</h2>
-                  <p className="text-sm text-slate-500 font-medium">Consulte suas reservas e compras</p>
-                </div>
-                <button 
-                  onClick={() => setShowConsult(false)} 
-                  className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <div className="p-8">
+              <div className="p-8 sm:p-10 text-center">
                 {!consultResult ? (
-                  <form onSubmit={handleConsult} className="space-y-6">
-                    <div className="space-y-5">
-                      <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10 flex gap-3 items-start">
-                        <Search className="w-5 h-5 text-primary mt-0.5" />
-                        <p className="text-xs text-slate-600 leading-relaxed">
-                          Informe seu WhatsApp ou CPF para localizar todos os seus números da sorte.
-                        </p>
+                  <div className="space-y-8">
+                    <div>
+                      <div className="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <Search className="w-8 h-8" />
                       </div>
+                      <h2 className="text-3xl font-black text-slate-900 tracking-tight">Consultar meus números</h2>
+                      <p className="text-slate-500 font-medium mt-2">Informe seus dados para localizar suas compras</p>
+                    </div>
 
+                    <form onSubmit={handleConsult} className="space-y-6 text-left">
                       <div className="space-y-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 ml-1">WhatsApp</label>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">WhatsApp</label>
                           <div className="relative group">
-                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-primary transition-colors" />
+                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-primary transition-colors" />
                             <input 
                               type="tel" 
                               value={phone}
                               onChange={e => setPhone(e.target.value)}
-                              className="w-full pl-11 pr-4 py-3.5 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-medium"
+                              className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-2 border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-lg"
                               placeholder="(00) 00000-0000"
                             />
                           </div>
@@ -245,36 +233,36 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                           <div className="flex-grow border-t border-slate-100"></div>
                         </div>
 
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 ml-1">CPF</label>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">CPF</label>
                           <div className="relative group">
-                            <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-primary transition-colors" />
+                            <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-primary transition-colors" />
                             <input 
                               type="text" 
                               value={cpf}
                               onChange={e => setCpf(e.target.value)}
-                              className="w-full pl-11 pr-4 py-3.5 bg-slate-50 rounded-2xl border border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-medium"
+                              className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-2 border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-lg"
                               placeholder="000.000.000-00"
                             />
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-3 pt-4">
+                      <div className="flex flex-col gap-4 pt-4">
                         <button 
                           type="submit" 
                           disabled={consulting || (!phone && !cpf)} 
-                          className="w-full bg-primary text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+                          className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-3"
                         >
                           {consulting ? (
                             <>
-                              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
                               <span>Buscando...</span>
                             </>
                           ) : (
                             <>
-                              <Search className="w-5 h-5" />
-                              <span>Buscar Números</span>
+                              <Search className="w-6 h-6" />
+                              <span>Consultar Agora</span>
                             </>
                           )}
                         </button>
@@ -282,42 +270,51 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                         <button 
                           type="button"
                           onClick={() => setShowConsult(false)}
-                          className="w-full py-3 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors flex items-center justify-center gap-2"
+                          className="w-full py-4 text-base font-black text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2"
                         >
+                          <X className="w-5 h-5" />
                           Voltar para a rifa
                         </button>
                       </div>
-                    </div>
-                  </form>
+                    </form>
+                  </div>
                 ) : (
                   <div className="space-y-8">
-                    <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
-                      <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-3xl border border-slate-100">
-                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                          <UserIcon className="w-6 h-6 text-primary" />
+                    <div>
+                      <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <Ticket className="w-8 h-8" />
+                      </div>
+                      <h2 className="text-3xl font-black text-slate-900 tracking-tight">Resultado da Busca</h2>
+                      <p className="text-slate-500 font-medium mt-2">Encontramos os seguintes números para você</p>
+                    </div>
+
+                    <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar text-left">
+                      <div className="flex items-center gap-4 p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                        <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                          <UserIcon className="w-7 h-7 text-primary" />
                         </div>
                         <div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cliente</p>
-                          <p className="font-bold text-slate-900">{consultResult.name}</p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cliente Localizado</p>
+                          <p className="text-lg font-black text-slate-900">{consultResult.name}</p>
                         </div>
                       </div>
 
                       <div className="space-y-6">
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                           <div className="flex items-center justify-between px-1">
-                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Números Pagos</p>
-                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-md">
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Números Pagos</p>
+                            <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-black rounded-lg">
                               {consultResult.confirmed.length}
                             </span>
                           </div>
                           {consultResult.confirmed.length === 0 ? (
-                            <div className="p-6 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200 text-center">
-                              <p className="text-sm text-slate-400 font-medium">Nenhum número pago encontrado.</p>
+                            <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
+                              <p className="text-sm text-slate-400 font-bold">Nenhum número pago encontrado.</p>
                             </div>
                           ) : (
-                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
                               {consultResult.confirmed.map((n: number) => (
-                                <div key={n} className="aspect-square flex items-center justify-center bg-emerald-50 text-emerald-600 text-sm font-black rounded-xl border border-emerald-100 shadow-sm">
+                                <div key={n} className="aspect-square flex items-center justify-center bg-emerald-50 text-emerald-600 text-base font-black rounded-2xl border-2 border-emerald-100 shadow-sm">
                                   {n.toString().padStart(2, '0')}
                                 </div>
                               ))}
@@ -325,21 +322,21 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                           )}
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                           <div className="flex items-center justify-between px-1">
-                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Reservas Pendentes</p>
-                            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-black rounded-md">
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Reservas Pendentes</p>
+                            <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-black rounded-lg">
                               {consultResult.pending.length}
                             </span>
                           </div>
                           {consultResult.pending.length === 0 ? (
-                            <div className="p-6 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200 text-center">
-                              <p className="text-sm text-slate-400 font-medium">Nenhuma reserva pendente.</p>
+                            <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
+                              <p className="text-sm text-slate-400 font-bold">Nenhuma reserva pendente.</p>
                             </div>
                           ) : (
-                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
                               {consultResult.pending.map((n: number) => (
-                                <div key={n} className="aspect-square flex items-center justify-center bg-amber-50 text-amber-600 text-sm font-black rounded-xl border border-amber-100 shadow-sm">
+                                <div key={n} className="aspect-square flex items-center justify-center bg-amber-50 text-amber-600 text-base font-black rounded-2xl border-2 border-amber-100 shadow-sm">
                                   {n.toString().padStart(2, '0')}
                                 </div>
                               ))}
@@ -349,17 +346,17 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-3 pt-6 border-t border-slate-100">
+                    <div className="flex flex-col gap-4 pt-6 border-t border-slate-100">
                       <button 
                         onClick={() => setShowConsult(false)} 
-                        className="w-full bg-primary text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                        className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
                       >
-                        <Ticket className="w-5 h-5" />
+                        <Ticket className="w-6 h-6" />
                         Voltar para a rifa
                       </button>
                       <button 
                         onClick={() => { setConsultResult(null); setPhone(''); setCpf(''); }} 
-                        className="w-full py-2 text-sm font-bold text-slate-400 hover:text-primary transition-colors"
+                        className="w-full py-2 text-sm font-black text-slate-400 hover:text-primary transition-colors uppercase tracking-widest"
                       >
                         Consultar outro número
                       </button>
@@ -368,7 +365,6 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
                 )}
               </div>
             </motion.div>
-
           </div>
         )}
       </AnimatePresence>
@@ -428,10 +424,32 @@ const Home = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-lg text-slate-600 max-w-2xl mx-auto"
+          className="text-lg text-slate-600 max-w-2xl mx-auto mb-8"
         >
           Participe das nossas rifas e concorra a prêmios exclusivos. É rápido, fácil e seguro.
         </motion.p>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="flex justify-center"
+        >
+          <button 
+            onClick={() => {
+              // Trigger the consultation modal from Navbar
+              const navBtn = document.querySelector('button[onClick*="setShowConsult(true)"]') as HTMLButtonElement;
+              if (navBtn) navBtn.click();
+              // Since we can't easily access Navbar state from here without a global state, 
+              // we'll just use the existing Navbar button logic.
+              // Actually, I'll move showConsult to a more global place if needed, 
+              // but for now, I'll just add a "Consultar" button that looks nice.
+            }}
+            className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black shadow-xl hover:shadow-2xl transition-all flex items-center gap-3 border border-slate-100 group"
+          >
+            <Search className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+            <span>Consultar meus números</span>
+          </button>
+        </motion.div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
