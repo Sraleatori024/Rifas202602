@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db, admin } from '../lib/firebase-admin.js';
+import { getDb, admin } from '../lib/firebase-admin.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -20,6 +20,7 @@ const normalizedStatus = String(status || "").toLowerCase();
   }
 
   try {
+    const db = getDb();
     console.log(`Webhook: Processando pagamento ${paymentId} com status ${status}`);
     const paymentRef = db.collection("compras").doc(paymentId);
     const paymentSnap = await paymentRef.get();
@@ -47,6 +48,7 @@ const normalizedStatus = String(status || "").toLowerCase();
 }
 
 async function processPayment(docSnap: any, res: VercelResponse) {
+  const db = getDb();
   const data = docSnap.data();
   const paymentId = docSnap.id;
   

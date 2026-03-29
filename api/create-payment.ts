@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db, admin } from '../lib/firebase-admin.js';
+import { getDb, admin } from '../lib/firebase-admin.js';
 
 const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
 const normalizeCPF = (cpf: string) => {
@@ -95,6 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const db = getDb();
     if (!req.body) {
       return res.status(400).json({ error: "Body vazio." });
     }
@@ -346,6 +347,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (error: any) {
     console.error("Error in create-payment:", error);
+    
+    if (error.code === 8 || error.message?.includes('Quota exceeded')) {
+      return res.status(429).json({
+        success: false,
+        code: "QUOTA_EXCEEDED",
+        message: "Limite de transações do banco de dados atingido para hoje. Por favor, tente novamente mais tarde.",
+        details: error.message
+      });
+    }
+
     return res.status(500).json({ 
       success: false,
       code: "ERRO_INTERNO",

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db, admin } from '../lib/firebase-admin.js';
+import { getDb, admin } from '../lib/firebase-admin.js';
 
 const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
 
@@ -15,6 +15,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const db = getDb();
     const phone = normalizePhone(whatsapp);
     const normalizedCpf = String(cpf || "").replace(/\D/g, "");
 
@@ -37,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ success: false, message: "Nenhuma compra encontrada" });
     }
 
-    let pendingNumbers: number[] = [];
+    let pendingPurchases: any[] = [];
     let confirmedNumbers: number[] = [];
     let name = "";
 
@@ -46,20 +47,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (data.numero && Array.isArray(data.numero)) {
         if (data.status === "paid") {
           confirmedNumbers = [...confirmedNumbers, ...data.numero];
-        } else {
-          pendingNumbers = [...pendingNumbers, ...data.numero];
+        } else if (data.status === "pending") {
+          pendingPurchases.push({
+            id: doc.id,
+            numbers: data.numero,
+            pix_code: data.pix_code,
+            valor: data.valor,
+            createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toISOString() : data.createdAt) : null
+          });
         }
       }
       if (!name && data.nome) name = data.nome;
     });
 
-    // Remover duplicatas e ordenar
-    pendingNumbers = [...new Set(pendingNumbers)].sort((a, b) => a - b);
+    // Remover duplicatas e ordenar números confirmados
     confirmedNumbers = [...new Set(confirmedNumbers)].sort((a, b) => a - b);
 
     res.json({
       success: true,
-      pending: pendingNumbers,
+      pendingPurchases: pendingPurchases,
       confirmed: confirmedNumbers,
       name: name
     });

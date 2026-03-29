@@ -27,7 +27,9 @@ import {
   Package,
   Hash,
   ArrowRight,
-  Search
+  Search,
+  QrCode,
+  Copy
 } from 'lucide-react';
 import { cn, User, Raffle, RaffleNumber, Winner } from './types';
 import { auth, db } from './firebase';
@@ -56,43 +58,8 @@ import {
 
 // --- Components ---
 
-const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void }) => {
+const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogout: () => void, setShowConsult: (show: boolean) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [showConsult, setShowConsult] = useState(false);
-  const [phone, setPhone] = useState('');
-  const [cpf, setCpf] = useState('');
-  const [consultResult, setConsultResult] = useState<any>(null);
-  const [consulting, setConsulting] = useState(false);
-
-  const handleConsult = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setConsulting(true);
-    setConsultResult(null);
-    try {
-      const normalizedPhone = phone.replace(/\D/g, '');
-      const normalizedCpf = cpf.replace(/\D/g, '');
-      
-      const res = await fetch('/api/consultar-numeros', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          whatsapp: normalizedPhone || undefined,
-          cpf: normalizedCpf || undefined
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setConsultResult(data);
-      } else {
-        alert(data.message || "Nenhuma compra encontrada");
-      }
-    } catch (err: any) {
-      console.error("Erro de conexão:", err);
-      alert("Erro de conexão.");
-    } finally {
-      setConsulting(false);
-    }
-  };
 
   return (
     <nav className="sticky top-0 z-50 glass bg-white/90">
@@ -182,199 +149,13 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Consult Modal */}
-      <AnimatePresence>
-        {showConsult && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowConsult(false)}
-              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/20"
-            >
-              <div className="p-8 sm:p-10 text-center">
-                {!consultResult ? (
-                  <div className="space-y-8">
-                    <div>
-                      <div className="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <Search className="w-8 h-8" />
-                      </div>
-                      <h2 className="text-3xl font-black text-slate-900 tracking-tight">Consultar meus números</h2>
-                      <p className="text-slate-500 font-medium mt-2">Informe seus dados para localizar suas compras</p>
-                    </div>
-
-                    <form onSubmit={handleConsult} className="space-y-6 text-left">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">WhatsApp</label>
-                          <div className="relative group">
-                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-primary transition-colors" />
-                            <input 
-                              type="tel" 
-                              value={phone}
-                              onChange={e => setPhone(e.target.value)}
-                              className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-2 border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-lg"
-                              placeholder="(00) 00000-0000"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="relative flex items-center py-2">
-                          <div className="flex-grow border-t border-slate-100"></div>
-                          <span className="flex-shrink mx-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">ou</span>
-                          <div className="flex-grow border-t border-slate-100"></div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">CPF</label>
-                          <div className="relative group">
-                            <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-primary transition-colors" />
-                            <input 
-                              type="text" 
-                              value={cpf}
-                              onChange={e => setCpf(e.target.value)}
-                              className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-2 border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-lg"
-                              placeholder="000.000.000-00"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col gap-4 pt-4">
-                        <button 
-                          type="submit" 
-                          disabled={consulting || (!phone && !cpf)} 
-                          className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-3"
-                        >
-                          {consulting ? (
-                            <>
-                              <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
-                              <span>Buscando...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Search className="w-6 h-6" />
-                              <span>Consultar Agora</span>
-                            </>
-                          )}
-                        </button>
-                        
-                        <button 
-                          type="button"
-                          onClick={() => setShowConsult(false)}
-                          className="w-full py-4 text-base font-black text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2"
-                        >
-                          <X className="w-5 h-5" />
-                          Voltar para a rifa
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                ) : (
-                  <div className="space-y-8">
-                    <div>
-                      <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <Ticket className="w-8 h-8" />
-                      </div>
-                      <h2 className="text-3xl font-black text-slate-900 tracking-tight">Resultado da Busca</h2>
-                      <p className="text-slate-500 font-medium mt-2">Encontramos os seguintes números para você</p>
-                    </div>
-
-                    <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar text-left">
-                      <div className="flex items-center gap-4 p-5 bg-slate-50 rounded-3xl border border-slate-100">
-                        <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                          <UserIcon className="w-7 h-7 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cliente Localizado</p>
-                          <p className="text-lg font-black text-slate-900">{consultResult.name}</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-6">
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between px-1">
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Números Pagos</p>
-                            <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-black rounded-lg">
-                              {consultResult.confirmed.length}
-                            </span>
-                          </div>
-                          {consultResult.confirmed.length === 0 ? (
-                            <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
-                              <p className="text-sm text-slate-400 font-bold">Nenhum número pago encontrado.</p>
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
-                              {consultResult.confirmed.map((n: number) => (
-                                <div key={n} className="aspect-square flex items-center justify-center bg-emerald-50 text-emerald-600 text-base font-black rounded-2xl border-2 border-emerald-100 shadow-sm">
-                                  {n.toString().padStart(2, '0')}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between px-1">
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Reservas Pendentes</p>
-                            <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-black rounded-lg">
-                              {consultResult.pending.length}
-                            </span>
-                          </div>
-                          {consultResult.pending.length === 0 ? (
-                            <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
-                              <p className="text-sm text-slate-400 font-bold">Nenhuma reserva pendente.</p>
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
-                              {consultResult.pending.map((n: number) => (
-                                <div key={n} className="aspect-square flex items-center justify-center bg-amber-50 text-amber-600 text-base font-black rounded-2xl border-2 border-amber-100 shadow-sm">
-                                  {n.toString().padStart(2, '0')}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-4 pt-6 border-t border-slate-100">
-                      <button 
-                        onClick={() => setShowConsult(false)} 
-                        className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
-                      >
-                        <Ticket className="w-6 h-6" />
-                        Voltar para a rifa
-                      </button>
-                      <button 
-                        onClick={() => { setConsultResult(null); setPhone(''); setCpf(''); }} 
-                        className="w-full py-2 text-sm font-black text-slate-400 hover:text-primary transition-colors uppercase tracking-widest"
-                      >
-                        Consultar outro número
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </nav>
   );
 };
 
 // --- Pages ---
 
-const Home = () => {
+const Home = ({ setShowConsult }: { setShowConsult: (show: boolean) => void }) => {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -389,9 +170,11 @@ const Home = () => {
       setRaffles(rafflesData);
       setLoading(false);
       setError(null);
-    }, (err) => {
+    }, (err: any) => {
       console.error("Error fetching raffles:", err);
-      if (err.code === 'permission-denied') {
+      if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
+        setError("Limite de acesso ao banco de dados atingido. Por favor, tente novamente amanhã.");
+      } else if (err.code === 'permission-denied') {
         setError("Erro de permissão no Firestore. Verifique as regras de segurança.");
       } else {
         setError("Erro ao carregar rifas.");
@@ -435,15 +218,7 @@ const Home = () => {
           className="flex justify-center"
         >
           <button 
-            onClick={() => {
-              // Trigger the consultation modal from Navbar
-              const navBtn = document.querySelector('button[onClick*="setShowConsult(true)"]') as HTMLButtonElement;
-              if (navBtn) navBtn.click();
-              // Since we can't easily access Navbar state from here without a global state, 
-              // we'll just use the existing Navbar button logic.
-              // Actually, I'll move showConsult to a more global place if needed, 
-              // but for now, I'll just add a "Consultar" button that looks nice.
-            }}
+            onClick={() => setShowConsult(true)}
             className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black shadow-xl hover:shadow-2xl transition-all flex items-center gap-3 border border-slate-100 group"
           >
             <Search className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
@@ -662,11 +437,19 @@ const RaffleDetails = () => {
         setStep(3);
       } else {
         const error = await res.json();
-        alert(error.message || error.error || "Erro ao processar compra.");
+        if (error.message?.includes('Quota exceeded') || error.details?.includes('Quota exceeded')) {
+          alert("Limite de transações atingido para hoje. Por favor, tente novamente mais tarde.");
+        } else {
+          alert(error.message || error.error || "Erro ao processar compra.");
+        }
       }
     } catch (err: any) {
       console.error("Erro ao processar compra:", err);
-      alert("Erro ao processar compra.");
+      if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
+        alert("Limite de transações atingido para hoje. Por favor, tente novamente mais tarde.");
+      } else {
+        alert("Erro ao processar compra.");
+      }
     } finally {
       setGeneratingPix(false);
     }
@@ -2527,6 +2310,53 @@ const Setup = () => {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Consultation States
+  const [showConsult, setShowConsult] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [consultResult, setConsultResult] = useState<any>(null);
+  const [consulting, setConsulting] = useState(false);
+  const [selectedPendingPurchase, setSelectedPendingPurchase] = useState<any>(null);
+
+  const handleConsult = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConsulting(true);
+    setConsultResult(null);
+    try {
+      const normalizedPhone = phone.replace(/\D/g, '');
+      const normalizedCpf = cpf.replace(/\D/g, '');
+      
+      const res = await fetch('/api/consultar-numeros', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          whatsapp: normalizedPhone || undefined,
+          cpf: normalizedCpf || undefined
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConsultResult(data);
+      } else {
+        alert(data.message || "Nenhuma compra encontrada");
+      }
+    } catch (err: any) {
+      console.error("Erro de conexão:", err);
+      if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
+        alert("Limite de consultas atingido para hoje. Por favor, tente novamente mais tarde.");
+      } else {
+        alert("Erro de conexão.");
+      }
+    } finally {
+      setConsulting(false);
+    }
+  };
+
+  const copyPix = (code: string) => {
+    navigator.clipboard.writeText(code);
+    alert("Código PIX copiado!");
+  };
 
   useEffect(() => {
     console.log("App mounted, checking auth state...");
@@ -2570,11 +2400,11 @@ export default function App() {
   return (
     <Router>
       <div className="min-h-screen flex flex-col">
-        <Navbar user={user} onLogout={handleLogout} />
+        <Navbar user={user} onLogout={handleLogout} setShowConsult={setShowConsult} />
         
         <main className="flex-grow">
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Home setShowConsult={setShowConsult} />} />
             <Route path="/raffle/:id" element={<RaffleDetails />} />
             <Route path="/setup" element={<Setup />} />
             <Route 
@@ -2599,6 +2429,246 @@ export default function App() {
           </div>
         </footer>
       </div>
+
+      {/* Consult Modal */}
+      <AnimatePresence>
+        {showConsult && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowConsult(false)}
+              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/20"
+            >
+              <div className="p-8 sm:p-10 text-center">
+                {!consultResult ? (
+                  <div className="space-y-8">
+                    <div>
+                      <div className="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <Search className="w-8 h-8" />
+                      </div>
+                      <h2 className="text-3xl font-black text-slate-900 tracking-tight">Consultar meus números</h2>
+                      <p className="text-slate-500 font-medium mt-2">Informe seus dados para localizar suas compras</p>
+                    </div>
+
+                    <form onSubmit={handleConsult} className="space-y-6 text-left">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">WhatsApp</label>
+                          <div className="relative group">
+                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-primary transition-colors" />
+                            <input 
+                              type="tel" 
+                              value={phone}
+                              onChange={e => setPhone(e.target.value)}
+                              className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-2 border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-lg"
+                              placeholder="(00) 00000-0000"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="relative flex items-center py-2">
+                          <div className="flex-grow border-t border-slate-100"></div>
+                          <span className="flex-shrink mx-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">ou</span>
+                          <div className="flex-grow border-t border-slate-100"></div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">CPF</label>
+                          <div className="relative group">
+                            <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-primary transition-colors" />
+                            <input 
+                              type="text" 
+                              value={cpf}
+                              onChange={e => setCpf(e.target.value)}
+                              className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-2 border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-lg"
+                              placeholder="000.000.000-00"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-4 pt-4">
+                        <button 
+                          type="submit" 
+                          disabled={consulting || (!phone && !cpf)} 
+                          className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-3"
+                        >
+                          {consulting ? (
+                            <>
+                              <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                              <span>Buscando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Search className="w-6 h-6" />
+                              <span>Consultar Agora</span>
+                            </>
+                          )}
+                        </button>
+                        
+                        <button 
+                          type="button"
+                          onClick={() => setShowConsult(false)}
+                          className="w-full py-4 text-base font-black text-slate-400 hover:text-slate-900 transition-all flex items-center justify-center gap-2"
+                        >
+                          <X className="w-5 h-5" />
+                          Voltar para a rifa
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    <div>
+                      <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <Ticket className="w-8 h-8" />
+                      </div>
+                      <h2 className="text-3xl font-black text-slate-900 tracking-tight">Resultado da Busca</h2>
+                      <p className="text-slate-500 font-medium mt-2">Encontramos os seguintes números para você</p>
+                    </div>
+
+                    <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar text-left">
+                      <div className="flex items-center gap-4 p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                        <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                          <UserIcon className="w-7 h-7 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cliente Localizado</p>
+                          <p className="text-lg font-black text-slate-900">{consultResult.name}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-6">
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between px-1">
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Números Pagos</p>
+                            <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-black rounded-lg">
+                              {consultResult.confirmed.length}
+                            </span>
+                          </div>
+                          {consultResult.confirmed.length === 0 ? (
+                            <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
+                              <p className="text-sm text-slate-400 font-bold">Nenhum número pago encontrado.</p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
+                              {consultResult.confirmed.map((n: number) => (
+                                <div key={n} className="aspect-square flex items-center justify-center bg-emerald-50 text-emerald-600 text-base font-black rounded-2xl border-2 border-emerald-100 shadow-sm">
+                                  {n.toString().padStart(2, '0')}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between px-1">
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Reservas Pendentes</p>
+                            <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-black rounded-lg">
+                              {consultResult.pendingPurchases?.length || 0}
+                            </span>
+                          </div>
+                          {!consultResult.pendingPurchases || consultResult.pendingPurchases.length === 0 ? (
+                            <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
+                              <p className="text-sm text-slate-400 font-bold">Nenhuma reserva pendente.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {consultResult.pendingPurchases.map((purchase: any) => (
+                                <div key={purchase.id} className="p-4 bg-amber-50 rounded-2xl border border-amber-100 space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {purchase.numbers.map((n: number) => (
+                                        <span key={n} className="px-2 py-1 bg-white text-amber-600 text-[10px] font-black rounded-lg border border-amber-200">
+                                          {n.toString().padStart(2, '0')}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <p className="text-sm font-black text-amber-700">R$ {purchase.valor.toFixed(2)}</p>
+                                  </div>
+                                  <button 
+                                    onClick={() => setSelectedPendingPurchase(purchase)}
+                                    className="w-full py-2.5 bg-amber-500 text-white text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-colors flex items-center justify-center gap-2"
+                                  >
+                                    <CreditCard className="w-4 h-4" />
+                                    Pagar Agora
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedPendingPurchase && (
+                      <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm" onClick={() => setSelectedPendingPurchase(null)} />
+                        <div className="relative w-full max-w-sm bg-white rounded-[2rem] p-8 text-center space-y-6">
+                          <div>
+                            <div className="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                              <QrCode className="w-8 h-8" />
+                            </div>
+                            <h3 className="text-2xl font-black text-slate-900">Pagamento PIX</h3>
+                            <p className="text-slate-500 text-sm font-medium mt-1">Finalize sua compra agora</p>
+                          </div>
+
+                          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Código PIX Copia e Cola</p>
+                            <div className="bg-white p-3 rounded-xl border border-slate-200 break-all text-[10px] font-mono text-slate-600 select-all">
+                              {selectedPendingPurchase.pix_code}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-3">
+                            <button 
+                              onClick={() => copyPix(selectedPendingPurchase.pix_code)}
+                              className="w-full bg-primary text-white py-4 rounded-xl font-black shadow-xl shadow-primary/20 flex items-center justify-center gap-2"
+                            >
+                              <Copy className="w-5 h-5" />
+                              Copiar Código PIX
+                            </button>
+                            <button 
+                              onClick={() => setSelectedPendingPurchase(null)}
+                              className="w-full py-3 text-slate-400 font-bold hover:text-slate-900 transition-colors"
+                            >
+                              Fechar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-4 pt-6 border-t border-slate-100">
+                      <button 
+                        onClick={() => setShowConsult(false)} 
+                        className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                      >
+                        <Ticket className="w-6 h-6" />
+                        Voltar para a rifa
+                      </button>
+                      <button 
+                        onClick={() => { setConsultResult(null); setPhone(''); setCpf(''); }} 
+                        className="w-full py-2 text-sm font-black text-slate-400 hover:text-primary transition-colors uppercase tracking-widest"
+                      >
+                        Consultar outro número
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </Router>
   );
 }
