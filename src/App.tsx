@@ -2505,6 +2505,7 @@ const Setup = () => {
 
 // --- Main App ---
 
+// --- Main App Component ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
