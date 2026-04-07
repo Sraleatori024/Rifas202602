@@ -83,7 +83,7 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
               className="text-slate-600 hover:text-primary font-medium transition-colors flex items-center gap-2"
             >
               <Users className="w-4 h-4" />
-              Consultar meus números
+              enfrentar (verificar sistema)
             </button>
             {user?.role === 'admin' && (
               <Link to="/admin" className="text-slate-600 hover:text-primary font-medium transition-colors">Painel Admin</Link>
@@ -130,7 +130,7 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
                 onClick={() => { setShowConsult(true); setIsOpen(false); }}
                 className="w-full text-left px-3 py-2 text-slate-600 font-medium"
               >
-                Consultar meus números
+                enfrentar (verificar sistema)
               </button>
               {user?.role === 'admin' && (
                 <Link to="/admin" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-slate-600 font-medium">Painel Admin</Link>
@@ -222,7 +222,7 @@ const Home = ({ setShowConsult }: { setShowConsult: (show: boolean) => void }) =
             className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black shadow-xl hover:shadow-2xl transition-all flex items-center gap-3 border border-slate-100 group"
           >
             <Search className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
-            <span>Consultar meus números</span>
+            <span>enfrentar (verificar sistema)</span>
           </button>
         </motion.div>
       </header>
