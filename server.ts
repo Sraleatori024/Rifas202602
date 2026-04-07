@@ -49,7 +49,7 @@ async function generateToken() {
     const data = await response.json();
     
     if (!response.ok || !data.access_token) {
-      console.error("Erro ao gerar token:", data);
+      console.error("Erro ao gerar token:", data.message || data);
       throw new Error(data.message || "Falha na autenticação");
     }
 
@@ -275,9 +275,9 @@ async function startServer() {
       // 5. PIX_GERACAO_ERRO
       let syncPayResult;
       try {
-        console.log("Enviando payload para SyncPayments:", JSON.stringify(payload, null, 2));
+        console.log("Enviando payload para SyncPayments (ID):", payload.external_id);
         syncPayResult = await createCashIn(accessToken, payload);
-        console.log("Resultado SyncPayments:", syncPayResult);
+        console.log("Resultado SyncPayments recebido.");
       } catch (apiError: any) {
         return res.status(500).json({
           success: false,
@@ -328,7 +328,7 @@ async function startServer() {
       res.json(responseData);
 
     } catch (error: any) {
-      console.error("Erro ao criar pagamento:", error);
+      console.error("Erro ao criar pagamento:", error.message || error);
       res.status(500).json({ 
         success: false, 
         code: "ERRO_INTERNO",
@@ -345,7 +345,6 @@ async function startServer() {
     const paymentId = external_id || id;
 
     console.log(`[Webhook] Recebido: status=${status}, id=${id}, external_id=${external_id}`);
-    console.log("Full Webhook Body:", JSON.stringify(req.body, null, 2));
 
     if (normalizedStatus !== "paid" && normalizedStatus !== "approved") {
       console.log(`[Webhook] Status ignorado: ${status}`);
@@ -457,7 +456,7 @@ async function startServer() {
       });
 
     } catch (error: any) {
-      console.error("[Webhook Error]:", error);
+      console.error("[Webhook Error]:", error.message || error);
       res.status(500).json({ error: "Erro ao processar webhook.", details: error.message });
     }
   });
@@ -477,22 +476,20 @@ async function startServer() {
       const phone = whatsapp ? normalizePhone(whatsapp) : null;
       const cleanCpf = cpf ? normalizeCPF(cpf) : null;
 
-      let query: admin.firestore.Query = getDb().collection("compras");
+      const db = getDb();
+      let snapshots: admin.firestore.QuerySnapshot[] = [];
 
       if (phone && cleanCpf) {
-        query = query.where(admin.firestore.Filter.or(
-          admin.firestore.Filter.where("telefone", "==", phone),
-          admin.firestore.Filter.where("cpf", "==", cleanCpf)
-        ));
+        const q1 = db.collection("compras").where("telefone", "==", phone).get();
+        const q2 = db.collection("compras").where("cpf", "==", cleanCpf).get();
+        snapshots = await Promise.all([q1, q2]);
       } else if (phone) {
-        query = query.where("telefone", "==", phone);
+        snapshots = [await db.collection("compras").where("telefone", "==", phone).get()];
       } else if (cleanCpf) {
-        query = query.where("cpf", "==", cleanCpf);
+        snapshots = [await db.collection("compras").where("cpf", "==", cleanCpf).get()];
       }
 
-      const snapshot = await query.get();
-
-      if (snapshot.empty) {
+      if (snapshots.every(s => s.empty)) {
         return res.json({ success: false, message: "Nenhuma compra encontrada" });
       }
 
@@ -500,17 +497,25 @@ async function startServer() {
       let pendingNumbers: number[] = [];
       let name = "";
 
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        if (data.numero && Array.isArray(data.numero)) {
-          if (data.status === "paid") {
-            confirmedNumbers = [...confirmedNumbers, ...data.numero];
-          } else {
-            pendingNumbers = [...pendingNumbers, ...data.numero];
+      // Usar um Map para evitar duplicatas de documentos se o mesmo doc for retornado em ambas as queries
+      const processedDocs = new Set<string>();
+
+      for (const snapshot of snapshots) {
+        snapshot.forEach(doc => {
+          if (processedDocs.has(doc.id)) return;
+          processedDocs.add(doc.id);
+
+          const data = doc.data();
+          if (data.numero && Array.isArray(data.numero)) {
+            if (data.status === "paid") {
+              confirmedNumbers = [...confirmedNumbers, ...data.numero];
+            } else {
+              pendingNumbers = [...pendingNumbers, ...data.numero];
+            }
           }
-        }
-        if (!name && data.nome) name = data.nome;
-      });
+          if (!name && data.nome) name = data.nome;
+        });
+      }
 
       // Remover duplicatas e ordenar
       confirmedNumbers = [...new Set(confirmedNumbers)].sort((a, b) => a - b);
@@ -523,7 +528,7 @@ async function startServer() {
         name: name
       });
     } catch (error: any) {
-      console.error("Erro ao consultar números:", error);
+      console.error("Erro ao consultar números:", error.message || error);
       res.status(500).json({ success: false, message: "Erro ao consultar números", details: error.message });
     }
   });

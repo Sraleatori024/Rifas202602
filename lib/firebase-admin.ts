@@ -28,18 +28,18 @@ if (!admin.apps.length) {
           privateKey,
         }),
       });
-      console.log("Firebase Admin inicializado com credenciais explícitas.");
+      console.log("Firebase Admin inicializado com credenciais de Service Account.");
     } else if (projectId) {
       // Tenta inicializar sem credenciais explícitas (útil em ambientes Google Cloud)
       admin.initializeApp({
         projectId: projectId
       });
-      console.log(`Firebase Admin inicializado com configuração padrão para o projeto: ${projectId}`);
+      console.log(`Firebase Admin inicializado via ADC (Application Default Credentials) para o projeto: ${projectId}`);
     } else {
-      console.error("Erro: Project ID não encontrado. Firebase Admin não pôde ser inicializado.");
+      console.error("ERRO CRÍTICO: Project ID não encontrado. O Firebase Admin NÃO pôde ser inicializado.");
     }
   } catch (error) {
-    console.error("Erro ao inicializar Firebase Admin:", error);
+    console.error("FALHA NA INICIALIZAÇÃO DO FIREBASE ADMIN:", error);
   }
 }
 

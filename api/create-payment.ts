@@ -53,24 +53,24 @@ async function createCashIn(token: string, payload: any) {
   if (!payload.amount || payload.amount <= 0) throw new Error("Valor da transação deve ser positivo");
   if (!payload.webhook_url) throw new Error("URL de Webhook não configurada no ambiente");
 
-  console.log("Iniciando Cash-In SyncPayments...");
-  console.log("Payload Enviado:", JSON.stringify(payload, null, 2));
+    // Log simplificado para evitar erros de estrutura circular
+    console.log("Iniciando Cash-In SyncPayments...");
+    console.log("Payload Enviado (ID):", payload.external_id);
 
-  try {
-    const response = await fetch(`${apiUrl}/api/partner/v1/cash-in`, {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
+    try {
+      const response = await fetch(`${apiUrl}/api/partner/v1/cash-in`, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
 
-    const result = await response.json();
-    
-    // Log detalhado para depuração em produção
-    console.log("Resposta Completa SyncPayments:", JSON.stringify(result, null, 2));
+      const result = await response.json();
+      
+      console.log("Resposta SyncPayments recebida.");
 
     if (!response.ok || result.success === false) {
       throw new Error(result.message || "Erro retornado pela API SyncPayments");
@@ -346,7 +346,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (error: any) {
-    console.error("Error in create-payment:", error);
+    console.error("Error in create-payment:", error.message || error);
     
     if (error.code === 8 || error.message?.includes('Quota exceeded')) {
       return res.status(429).json({

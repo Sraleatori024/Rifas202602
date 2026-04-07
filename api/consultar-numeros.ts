@@ -19,22 +19,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const phone = normalizePhone(whatsapp);
     const normalizedCpf = String(cpf || "").replace(/\D/g, "");
 
-    let query: any = db.collection("compras");
+    let snapshots: admin.firestore.QuerySnapshot[] = [];
 
     if (phone && normalizedCpf) {
-      query = query.where(admin.firestore.Filter.or(
-        admin.firestore.Filter.where("telefone", "==", phone),
-        admin.firestore.Filter.where("cpf", "==", normalizedCpf)
-      ));
+      const q1 = db.collection("compras").where("telefone", "==", phone).get();
+      const q2 = db.collection("compras").where("cpf", "==", normalizedCpf).get();
+      snapshots = await Promise.all([q1, q2]);
     } else if (phone) {
-      query = query.where("telefone", "==", phone);
+      snapshots = [await db.collection("compras").where("telefone", "==", phone).get()];
     } else if (normalizedCpf) {
-      query = query.where("cpf", "==", normalizedCpf);
+      snapshots = [await db.collection("compras").where("cpf", "==", normalizedCpf).get()];
     }
 
-    const snapshot = await query.get();
-
-    if (snapshot.empty) {
+    if (snapshots.every(s => s.empty)) {
       return res.json({ success: false, message: "Nenhuma compra encontrada" });
     }
 
@@ -42,23 +39,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let confirmedNumbers: number[] = [];
     let name = "";
 
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      if (data.numero && Array.isArray(data.numero)) {
-        if (data.status === "paid") {
-          confirmedNumbers = [...confirmedNumbers, ...data.numero];
-        } else if (data.status === "pending") {
-          pendingPurchases.push({
-            id: doc.id,
-            numbers: data.numero,
-            pix_code: data.pix_code,
-            valor: data.valor,
-            createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toISOString() : data.createdAt) : null
-          });
+    const processedDocs = new Set<string>();
+
+    for (const snapshot of snapshots) {
+      snapshot.forEach(doc => {
+        if (processedDocs.has(doc.id)) return;
+        processedDocs.add(doc.id);
+
+        const data = doc.data();
+        if (data.numero && Array.isArray(data.numero)) {
+          if (data.status === "paid") {
+            confirmedNumbers = [...confirmedNumbers, ...data.numero];
+          } else if (data.status === "pending") {
+            pendingPurchases.push({
+              id: doc.id,
+              numbers: data.numero,
+              pix_code: data.pix_code,
+              valor: data.valor,
+              createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toISOString() : data.createdAt) : null
+            });
+          }
         }
-      }
-      if (!name && data.nome) name = data.nome;
-    });
+        if (!name && data.nome) name = data.nome;
+      });
+    }
 
     // Remover duplicatas e ordenar números confirmados
     confirmedNumbers = [...new Set(confirmedNumbers)].sort((a, b) => a - b);
@@ -71,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (error) {
-    console.error("Consult Error:", error);
+    console.error("Consult Error:", error.message || error);
     res.status(500).json({ success: false, message: "Erro ao consultar números." });
   }
 }

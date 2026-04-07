@@ -171,7 +171,7 @@ const Home = ({ setShowConsult }: { setShowConsult: (show: boolean) => void }) =
       setLoading(false);
       setError(null);
     }, (err: any) => {
-      console.error("Error fetching raffles:", err);
+      console.error("Error fetching raffles:", err.message || err);
       if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
         setError("Limite de acesso ao banco de dados atingido. Por favor, tente novamente amanhã.");
       } else if (err.code === 'permission-denied') {
@@ -335,7 +335,7 @@ const RaffleDetails = () => {
         setRaffle({ id: docSnap.id, ...docSnap.data() } as any);
       }
     }, (error) => {
-      console.error("Error fetching raffle details:", error);
+      console.error("Error fetching raffle details:", error.message || error);
       setLoading(false);
     });
 
@@ -349,7 +349,7 @@ const RaffleDetails = () => {
       setStats({ total, sold: confirmed, available: total - confirmed });
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching numbers:", error);
+      console.error("Error fetching numbers:", error.message || error);
       setLoading(false);
     });
 
@@ -444,7 +444,7 @@ const RaffleDetails = () => {
         }
       }
     } catch (err: any) {
-      console.error("Erro ao processar compra:", err);
+      console.error("Erro ao processar compra:", err.message || err);
       if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
         alert("Limite de transações atingido para hoje. Por favor, tente novamente mais tarde.");
       } else {
@@ -811,8 +811,8 @@ const RaffleDetails = () => {
                   <CheckCircle2 className="w-14 h-14" />
                 </motion.div>
                 
-                <h3 className="text-3xl font-black text-slate-900 mb-4">PAGAMENTO CONFIRMADO!</h3>
-                <p className="text-xl text-slate-600 mb-8 font-medium">Boa sorte! Seus números já estão garantidos no sorteio. 🍀</p>
+                <h3 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tight">Pagamento concluído! 🎉</h3>
+                <p className="text-xl text-slate-600 mb-8 font-medium">Seus números foram reservados com sucesso. Boa sorte! 🍀</p>
                 
                 <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-8">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números da Sorte</p>
@@ -1251,7 +1251,7 @@ const AdminDashboard = () => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setRaffles(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as any);
     }, (error) => {
-      console.error("Erro ao carregar rifas no painel admin:", error);
+      console.error("Erro ao carregar rifas no painel admin:", error.message || error);
     });
     return () => unsubscribe();
   }, []);
@@ -1281,7 +1281,7 @@ const AdminDashboard = () => {
         totalSold
       });
     }, (error) => {
-      console.error("Erro ao carregar estatísticas do painel:", error);
+      console.error("Erro ao carregar estatísticas do painel:", error.message || error);
     });
     
     return () => unsubscribe();
@@ -1485,7 +1485,7 @@ const AdminDashboard = () => {
       });
 
     } catch (err: any) {
-      console.error("Erro ao realizar sorteio:", err);
+      console.error("Erro ao realizar sorteio:", err.message || err);
       alert(`Erro ao realizar sorteio: ${err.message || "Erro desconhecido"}`);
     }
   };
@@ -1566,7 +1566,7 @@ const AdminDashboard = () => {
       });
       alert("Rifa salva com sucesso!");
     } catch (err: any) {
-      console.error("Erro ao salvar rifa:", err);
+      console.error("Erro ao salvar rifa:", err.message || err);
       alert(`Erro ao salvar rifa: ${err.message || "Erro desconhecido"}`);
     } finally {
       setCreating(false);
@@ -1810,7 +1810,7 @@ const AdminDashboard = () => {
                   });
                 }
               } catch (err) {
-                console.error("Error saving winners:", err);
+                console.error("Error saving winners:", err.message || err);
               }
             };
             saveWinners();
@@ -2342,7 +2342,7 @@ export default function App() {
         alert(data.message || "Nenhuma compra encontrada");
       }
     } catch (err: any) {
-      console.error("Erro de conexão:", err);
+      console.error("Erro de conexão:", err.message || err);
       if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
         alert("Limite de consultas atingido para hoje. Por favor, tente novamente mais tarde.");
       } else {
@@ -2371,7 +2371,7 @@ export default function App() {
             setUser({ email: firebaseUser.email!, role: 'client' }); // Default to client if doc missing
           }
         } catch (err: any) {
-          console.error("Error fetching user document:", err);
+          console.error("Error fetching user document:", err.message || err);
           if (err.code === 'permission-denied') {
             console.error("Firestore permission denied. Please check your security rules.");
           }
@@ -2549,7 +2549,7 @@ export default function App() {
                       <div className="space-y-6">
                         <div className="space-y-4">
                           <div className="flex items-center justify-between px-1">
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Números Pagos</p>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Números Comprados (Pagos)</p>
                             <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-black rounded-lg">
                               {consultResult.confirmed.length}
                             </span>
@@ -2571,7 +2571,7 @@ export default function App() {
 
                         <div className="space-y-4">
                           <div className="flex items-center justify-between px-1">
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Reservas Pendentes</p>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Números Reservados (Aguardando Pagamento)</p>
                             <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-black rounded-lg">
                               {consultResult.pendingPurchases?.length || 0}
                             </span>
