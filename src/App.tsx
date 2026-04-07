@@ -82,8 +82,8 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
               onClick={() => setShowConsult(true)}
               className="text-slate-600 hover:text-primary font-medium transition-colors flex items-center gap-2"
             >
-              <Users className="w-4 h-4" />
-              enfrentar (verificar sistema)
+              <Search className="w-4 h-4" />
+              Consultar meus números
             </button>
             {user?.role === 'admin' && (
               <Link to="/admin" className="text-slate-600 hover:text-primary font-medium transition-colors">Painel Admin</Link>
@@ -651,7 +651,7 @@ const RaffleDetails = () => {
             <div className="card p-12 text-center bg-slate-50 border-2 border-dashed border-slate-200">
               <X className="w-16 h-16 text-slate-300 mx-auto mb-4" />
               <h3 className="text-2xl font-black text-slate-400 uppercase tracking-widest">Esgotado</h3>
-              <p className="text-slate-500">Infelizmente todos os números já foram reservados.</p>
+              <p className="text-slate-500">Infelizmente todos os números já foram comprados.</p>
             </div>
           ) : (
             step === 1 && (
@@ -769,7 +769,7 @@ const RaffleDetails = () => {
                   <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white animate-pulse" />
                 </div>
               </div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-2">Aguardando Pagamento</h3>
+              <h3 className="text-2xl font-bold text-slate-900 mb-2">Finalize seu Pagamento</h3>
               <p className="text-slate-600 mb-8">Escaneie o QR Code ou copie o código PIX. O sistema confirmará automaticamente.</p>
               
               {pixData && (
@@ -805,12 +805,38 @@ const RaffleDetails = () => {
                 <p className="text-left leading-tight"><strong>Monitorando pagamento:</strong> Não feche esta página. Seus números serão confirmados em segundos após o pagamento.</p>
               </div>
 
-              <button 
-                onClick={() => setStep(2)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-sm transition-colors"
-              >
-                Alterar forma de pagamento ou dados
-              </button>
+              <div className="flex flex-col gap-4">
+                <button 
+                  onClick={async () => {
+                    try {
+                      const response = await fetch('/api/webhook-syncpay', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          status: 'paid',
+                          external_id: purchaseId
+                        })
+                      });
+                      if (response.ok) {
+                        console.log("Pagamento simulado com sucesso!");
+                      }
+                    } catch (err) {
+                      console.error("Erro ao simular pagamento:", err);
+                    }
+                  }}
+                  className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-lg shadow-xl shadow-emerald-500/20 hover:bg-emerald-600 transition-all flex items-center justify-center gap-3"
+                >
+                  <CheckCircle2 className="w-6 h-6" />
+                  Confirmar Pagamento (Simulação)
+                </button>
+
+                <button 
+                  onClick={() => setStep(2)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-sm transition-colors"
+                >
+                  Alterar forma de pagamento ou dados
+                </button>
+              </div>
             </motion.div>
           )}
 
@@ -831,10 +857,10 @@ const RaffleDetails = () => {
                 </motion.div>
                 
                 <h3 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tight">Pagamento concluído! 🎉</h3>
-                <p className="text-xl text-slate-600 mb-8 font-medium">Seus números foram reservados. Boa sorte! 🍀</p>
+                <p className="text-xl text-slate-600 mb-8 font-medium">Seus números foram registrados. Boa sorte! 🍀</p>
                 
                 <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-8">
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números da Sorte</p>
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números Pagos</p>
                   <div className="flex flex-wrap justify-center gap-2">
                     {selectedNumbers.map(n => (
                       <span key={n} className="w-12 h-12 bg-white border-2 border-emerald-500 text-emerald-600 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm">
@@ -2336,7 +2362,6 @@ export default function App() {
   const [cpf, setCpf] = useState('');
   const [consultResult, setConsultResult] = useState<any>(null);
   const [consulting, setConsulting] = useState(false);
-  const [selectedPendingPurchase, setSelectedPendingPurchase] = useState<any>(null);
 
   const handleConsult = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2587,84 +2612,8 @@ export default function App() {
                             </div>
                           )}
                         </div>
-
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between px-1">
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Números Reservados (Aguardando Pagamento)</p>
-                            <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-black rounded-lg">
-                              {consultResult.pendingPurchases?.length || 0}
-                            </span>
-                          </div>
-                          {!consultResult.pendingPurchases || consultResult.pendingPurchases.length === 0 ? (
-                            <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
-                              <p className="text-sm text-slate-400 font-bold">Nenhuma reserva pendente.</p>
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              {consultResult.pendingPurchases.map((purchase: any) => (
-                                <div key={purchase.id} className="p-4 bg-amber-50 rounded-2xl border border-amber-100 space-y-3">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {purchase.numbers.map((n: number) => (
-                                        <span key={n} className="px-2 py-1 bg-white text-amber-600 text-[10px] font-black rounded-lg border border-amber-200">
-                                          {n.toString().padStart(2, '0')}
-                                        </span>
-                                      ))}
-                                    </div>
-                                    <p className="text-sm font-black text-amber-700">R$ {purchase.valor.toFixed(2)}</p>
-                                  </div>
-                                  <button 
-                                    onClick={() => setSelectedPendingPurchase(purchase)}
-                                    className="w-full py-2.5 bg-amber-500 text-white text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-colors flex items-center justify-center gap-2"
-                                  >
-                                    <CreditCard className="w-4 h-4" />
-                                    Pagar Agora
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
                       </div>
                     </div>
-
-                    {selectedPendingPurchase && (
-                      <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-                        <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm" onClick={() => setSelectedPendingPurchase(null)} />
-                        <div className="relative w-full max-w-sm bg-white rounded-[2rem] p-8 text-center space-y-6">
-                          <div>
-                            <div className="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-                              <QrCode className="w-8 h-8" />
-                            </div>
-                            <h3 className="text-2xl font-black text-slate-900">Pagamento PIX</h3>
-                            <p className="text-slate-500 text-sm font-medium mt-1">Finalize sua compra agora</p>
-                          </div>
-
-                          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Código PIX Copia e Cola</p>
-                            <div className="bg-white p-3 rounded-xl border border-slate-200 break-all text-[10px] font-mono text-slate-600 select-all">
-                              {selectedPendingPurchase.pix_code}
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col gap-3">
-                            <button 
-                              onClick={() => copyPix(selectedPendingPurchase.pix_code)}
-                              className="w-full bg-primary text-white py-4 rounded-xl font-black shadow-xl shadow-primary/20 flex items-center justify-center gap-2"
-                            >
-                              <Copy className="w-5 h-5" />
-                              Copiar Código PIX
-                            </button>
-                            <button 
-                              onClick={() => setSelectedPendingPurchase(null)}
-                              className="w-full py-3 text-slate-400 font-bold hover:text-slate-900 transition-colors"
-                            >
-                              Fechar
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
                     <div className="flex flex-col gap-4 pt-6 border-t border-slate-100">
                       <button 

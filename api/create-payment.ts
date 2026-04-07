@@ -150,27 +150,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Generate a unique identifier for this purchase
     const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    // --- LAZY CLEANUP: Release expired pending numbers (10 min) ---
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    const expiredSnap = await numbersRef
-      .where("status", "==", "pending")
-      .where("reserved_at", "<", admin.firestore.Timestamp.fromDate(tenMinutesAgo))
-      .get();
-
-    if (!expiredSnap.empty) {
-      const cleanupBatch = db.batch();
-      expiredSnap.forEach(doc => {
-        cleanupBatch.update(doc.ref, {
-          status: "available",
-          reserved_at: null,
-          buyer_name: null,
-          buyer_whatsapp: null
-        });
-      });
-      await cleanupBatch.commit();
-      console.log(`[Cleanup] Released ${expiredSnap.size} expired numbers for raffle ${raffleId}`);
-    }
-
     // Use a transaction to check and reserve numbers atomically
     const result = await db.runTransaction(async (transaction) => {
       const raffleSnap = await transaction.get(raffleRef);
@@ -242,11 +221,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      // Reserve numbers (internally we keep it available but with buyer info, 
-      // but user wants NO pending, so we just don't change status yet)
+      // Vincular informações do comprador aos números (sem alterar o status para manter como livre até o pagamento)
       for (const docSnap of snapshotsToUpdate) {
         transaction.update(docSnap.ref, {
-          reserved_at: admin.firestore.FieldValue.serverTimestamp(),
           buyer_name: buyer.name,
           buyer_whatsapp: normalizePhone(buyer.whatsapp)
         });
@@ -329,7 +306,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cpf: payload.client.cpf,
       pix_code: pix_code,
       identifier: identifier,
-      status: "pending",
+      status: "criada",
       numero: finalNumbers,
       rifaId: raffleId,
       valor: totalAmount,

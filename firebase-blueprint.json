@@ -36,7 +36,7 @@
         "rifaId": { "type": "string" },
         "numero": { "type": "array", "items": { "type": "integer" } },
         "valor": { "type": "number" },
-        "status": { "type": "string", "enum": ["pending", "paid", "expired"] },
+        "status": { "type": "string", "enum": ["paid", "expired"] },
         "identifier": { "type": "string" },
         "pix_code": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
@@ -68,10 +68,9 @@
         "type": "object",
         "properties": {
           "number": { "type": "integer" },
-          "status": { "type": "string", "enum": ["available", "pending", "confirmed"] },
+          "status": { "type": "string", "enum": ["available", "pago"] },
           "buyer_name": { "type": "string" },
-          "buyer_whatsapp": { "type": "string" },
-          "reserved_at": { "type": "string", "format": "date-time" }
+          "buyer_whatsapp": { "type": "string" }
         }
       },
       "description": "Numbers for a specific raffle"

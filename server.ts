@@ -224,11 +224,9 @@ async function startServer() {
           });
         }
 
-        // Reserve numbers (mark as pending - internally we keep it available but with buyer info if needed, 
-        // but user wants NO pending, so we just don't change status yet)
+        // Vincular informações do comprador aos números (sem alterar o status para manter como livre até o pagamento)
         for (const docSnap of snapshotsToUpdate) {
           transaction.update(docSnap.ref, {
-            reserved_at: admin.firestore.FieldValue.serverTimestamp(),
             buyer_name: buyer.name,
             buyer_whatsapp: normalizePhone(buyer.whatsapp)
           });
@@ -318,7 +316,7 @@ async function startServer() {
         cpf: responseData.cpf,
         pix_code: pix_code,
         identifier: identifier,
-        status: "pending",
+        status: "criada",
         numero: finalNumbers,
         rifaId: raffleId,
         valor: totalAmount,
@@ -520,7 +518,6 @@ async function startServer() {
       res.json({
         success: true,
         confirmed: confirmedNumbers,
-        pending: [],
         name: name
       });
     } catch (error: any) {

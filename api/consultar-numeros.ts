@@ -61,7 +61,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.json({
       success: true,
-      pendingPurchases: [],
       confirmed: confirmedNumbers,
       name: name
     });

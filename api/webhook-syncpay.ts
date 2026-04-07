@@ -52,7 +52,7 @@ async function processPayment(docSnap: any, res: VercelResponse) {
   const data = docSnap.data();
   const paymentId = docSnap.id;
   
-  if (data?.status === "paid") {
+  if (data?.status === "pago") {
     return res.json({ 
       success: true, 
       message: "Pagamento já confirmado! Boa sorte 🍀" 
@@ -92,7 +92,7 @@ async function processPayment(docSnap: any, res: VercelResponse) {
   });
 
   batch.update(docSnap.ref, {
-    status: "paid",
+    status: "pago",
     paid_at: admin.firestore.FieldValue.serverTimestamp()
   });
 

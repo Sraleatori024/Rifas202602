@@ -72,7 +72,7 @@ export interface RaffleNumber {
   id: number;
   raffle_id: number;
   number: number;
-  status: 'available' | 'reserved' | 'sold';
+  status: 'available' | 'pago';
   buyer_name?: string;
   buyer_whatsapp?: string;
   buyer_instagram?: string;
