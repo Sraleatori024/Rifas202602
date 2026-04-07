@@ -359,10 +359,30 @@ const RaffleDetails = () => {
     };
   }, [raffleId]);
 
+  // Function to save purchase to localStorage
+  const saveToLocalStorage = (purchase: any) => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('minhas_rifas') || '[]');
+      const updated = [...existing, purchase];
+      localStorage.setItem('minhas_rifas', JSON.stringify(updated));
+    } catch (e) {
+      console.error("Erro ao salvar no localStorage:", e);
+    }
+  };
+
   useEffect(() => {
     if (!purchaseId) return;
     const unsub = onSnapshot(doc(db, "compras", purchaseId), (docSnap) => {
       if (docSnap.exists() && docSnap.data().status === 'paid') {
+        const data = docSnap.data();
+        // Save to local storage when paid
+        saveToLocalStorage({
+          raffleId: data.rifaId,
+          numbers: data.numero,
+          buyer: data.nome,
+          status: 'pago',
+          date: new Date().toISOString()
+        });
         setStep(4);
       }
     });
@@ -655,7 +675,7 @@ const RaffleDetails = () => {
                         onClick={() => toggleNumber(n.number)}
                         className={cn(
                           "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                          n.status === 'confirmed' ? "bg-emerald-100 text-emerald-600 cursor-not-allowed border border-emerald-200" :
+                          (n.status === 'confirmed' || n.status === 'pago') ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
                           n.status === 'pending' ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
                           selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
                           "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
@@ -812,7 +832,7 @@ const RaffleDetails = () => {
                 </motion.div>
                 
                 <h3 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tight">Pagamento concluído! 🎉</h3>
-                <p className="text-xl text-slate-600 mb-8 font-medium">Seus números foram reservados com sucesso. Boa sorte! 🍀</p>
+                <p className="text-xl text-slate-600 mb-8 font-medium">Seus números foram reservados. Boa sorte! 🍀</p>
                 
                 <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-8">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números da Sorte</p>
