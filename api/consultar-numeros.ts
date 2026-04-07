@@ -48,16 +48,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const data = doc.data();
         if (data.numero && Array.isArray(data.numero)) {
-          if (data.status === "paid") {
+          if (data.status === "paid" || data.status === "pago") {
             confirmedNumbers = [...confirmedNumbers, ...data.numero];
-          } else if (data.status === "pending") {
-            pendingPurchases.push({
-              id: doc.id,
-              numbers: data.numero,
-              pix_code: data.pix_code,
-              valor: data.valor,
-              createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toISOString() : data.createdAt) : null
-            });
           }
         }
         if (!name && data.nome) name = data.nome;
@@ -69,7 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.json({
       success: true,
-      pendingPurchases: pendingPurchases,
+      pendingPurchases: [],
       confirmed: confirmedNumbers,
       name: name
     });

@@ -344,9 +344,9 @@ const RaffleDetails = () => {
       setNumbers(nums.sort((a, b) => a.number - b.number));
       
       const total = nums.length;
-      const confirmed = nums.filter(n => n.status === 'confirmed').length;
-      console.log(`Rifa ${raffleId}: ${confirmed} números confirmados de ${total}`);
-      setStats({ total, sold: confirmed, available: total - confirmed });
+      const paid = nums.filter(n => n.status === 'pago' || n.status === 'confirmed').length;
+      console.log(`Rifa ${raffleId}: ${paid} números pagos de ${total}`);
+      setStats({ total, sold: paid, available: total - paid });
       setLoading(false);
     }, (error) => {
       console.error("Error fetching numbers:", error.message || error);
@@ -667,24 +667,23 @@ const RaffleDetails = () => {
                   </div>
                 </div>
 
-                  <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
-                    {numbers.map(n => (
-                      <button
-                        key={n.id}
-                        disabled={n.status !== 'available'}
-                        onClick={() => toggleNumber(n.number)}
-                        className={cn(
-                          "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                          (n.status === 'confirmed' || n.status === 'pago') ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
-                          n.status === 'pending' ? "bg-slate-100 text-slate-300 cursor-not-allowed" :
-                          selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
-                          "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
-                        )}
-                      >
-                        {n.number.toString().padStart(2, '0')}
-                      </button>
-                    ))}
-                  </div>
+                    <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
+                      {numbers.map(n => (
+                        <button
+                          key={n.id}
+                          disabled={n.status === 'pago' || n.status === 'confirmed'}
+                          onClick={() => toggleNumber(n.number)}
+                          className={cn(
+                            "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
+                            (n.status === 'pago' || n.status === 'confirmed') ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
+                            selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
+                            "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
+                          )}
+                        >
+                          {n.number.toString().padStart(2, '0')}
+                        </button>
+                      ))}
+                    </div>
               </div>
             )
           )}
@@ -2569,7 +2568,7 @@ export default function App() {
                       <div className="space-y-6">
                         <div className="space-y-4">
                           <div className="flex items-center justify-between px-1">
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Números Comprados (Pagos)</p>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Meus Números Pagos</p>
                             <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-black rounded-lg">
                               {consultResult.confirmed.length}
                             </span>

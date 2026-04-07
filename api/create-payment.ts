@@ -213,14 +213,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             numbersRef.where("number", "in", chunk)
           );
 
-          selectedNumbersSnap.forEach((doc) => {
-            const data = doc.data();
-            if (data.status !== "available") {
-              throw new Error(`O número ${data.number} já foi reservado ou comprado.`);
-            }
-            snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
-            finalNumbers.push(data.number);
-          });
+            selectedNumbersSnap.forEach((doc) => {
+              const data = doc.data();
+              if (data.status === "pago" || data.status === "confirmed") {
+                throw new Error(`O número ${data.number} já foi comprado.`);
+              }
+              snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
+              finalNumbers.push(data.number);
+            });
         }
 
         if (finalNumbers.length !== requestedNumbers.length) {
@@ -229,7 +229,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } else {
         // Automatic selection for package
         const availableSnap = await transaction.get(
-          numbersRef.where("status", "==", "available").limit(quantityNeeded)
+          numbersRef.where("status", "!=", "pago").limit(quantityNeeded)
         );
 
         if (availableSnap.size < quantityNeeded) {
@@ -242,10 +242,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      // Reserve numbers (mark as pending)
+      // Reserve numbers (internally we keep it available but with buyer info, 
+      // but user wants NO pending, so we just don't change status yet)
       for (const docSnap of snapshotsToUpdate) {
         transaction.update(docSnap.ref, {
-          status: "pending",
           reserved_at: admin.firestore.FieldValue.serverTimestamp(),
           buyer_name: buyer.name,
           buyer_whatsapp: normalizePhone(buyer.whatsapp)

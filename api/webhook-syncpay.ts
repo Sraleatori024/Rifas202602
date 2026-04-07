@@ -77,7 +77,7 @@ async function processPayment(docSnap: any, res: VercelResponse) {
     const selectedNumbersSnap = await numbersRef.where("number", "in", chunk).get();
     for (const docSnap of selectedNumbersSnap.docs) {
       batch.update(docSnap.ref, {
-        status: 'confirmed',
+        status: 'pago',
         buyer_name: nome,
         buyer_whatsapp: telefone,
         updated_at: admin.firestore.FieldValue.serverTimestamp()

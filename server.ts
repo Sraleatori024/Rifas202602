@@ -197,8 +197,8 @@ async function startServer() {
 
             selectedNumbersSnap.forEach((doc) => {
               const data = doc.data();
-              if (data.status !== "available") {
-                throw new Error(`O número ${data.number} já foi reservado ou comprado.`);
+              if (data.status === "pago" || data.status === "confirmed") {
+                throw new Error(`O número ${data.number} já foi comprado.`);
               }
               snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
               finalNumbers.push(data.number);
@@ -211,7 +211,7 @@ async function startServer() {
         } else {
           // Automatic selection for package
           const availableSnap = await transaction.get(
-            numbersRef.where("status", "==", "available").limit(quantityNeeded)
+            numbersRef.where("status", "!=", "pago").limit(quantityNeeded)
           );
 
           if (availableSnap.size < quantityNeeded) {
@@ -224,10 +224,10 @@ async function startServer() {
           });
         }
 
-        // Reserve numbers (mark as pending)
+        // Reserve numbers (mark as pending - internally we keep it available but with buyer info if needed, 
+        // but user wants NO pending, so we just don't change status yet)
         for (const docSnap of snapshotsToUpdate) {
           transaction.update(docSnap.ref, {
-            status: "pending",
             reserved_at: admin.firestore.FieldValue.serverTimestamp(),
             buyer_name: buyer.name,
             buyer_whatsapp: normalizePhone(buyer.whatsapp)
@@ -411,7 +411,7 @@ async function startServer() {
         const selectedNumbersSnap = await numbersRef.where("number", "in", chunk).get();
         for (const doc of selectedNumbersSnap.docs) {
           batch.update(doc.ref, {
-            status: 'confirmed',
+            status: 'pago',
             buyer_name: nome,
             buyer_whatsapp: telefone,
             updated_at: admin.firestore.FieldValue.serverTimestamp()
@@ -494,7 +494,6 @@ async function startServer() {
       }
 
       let confirmedNumbers: number[] = [];
-      let pendingNumbers: number[] = [];
       let name = "";
 
       // Usar um Map para evitar duplicatas de documentos se o mesmo doc for retornado em ambas as queries
@@ -507,10 +506,8 @@ async function startServer() {
 
           const data = doc.data();
           if (data.numero && Array.isArray(data.numero)) {
-            if (data.status === "paid") {
+            if (data.status === "paid" || data.status === "pago") {
               confirmedNumbers = [...confirmedNumbers, ...data.numero];
-            } else {
-              pendingNumbers = [...pendingNumbers, ...data.numero];
             }
           }
           if (!name && data.nome) name = data.nome;
@@ -519,12 +516,11 @@ async function startServer() {
 
       // Remover duplicatas e ordenar
       confirmedNumbers = [...new Set(confirmedNumbers)].sort((a, b) => a - b);
-      pendingNumbers = [...new Set(pendingNumbers)].sort((a, b) => a - b);
 
       res.json({
         success: true,
         confirmed: confirmedNumbers,
-        pending: pendingNumbers,
+        pending: [],
         name: name
       });
     } catch (error: any) {
