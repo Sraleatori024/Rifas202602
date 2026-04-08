@@ -6,10 +6,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { status, external_id, id } = req.body;
+  console.log("Webhook completo:", JSON.stringify(req.body, null, 2));
+  const data = req.body;
+  const status = data?.status || data?.data?.status || data?.payment?.status;
+  const external_id = data?.external_id || data?.data?.external_id;
+  const id = data?.id || data?.data?.id;
   const paymentId = external_id || id;
 
-  const normalizedStatus = String(status || "").toLowerCase();
+  const normalizedStatus = String(status || "").toLowerCase().trim();
   // SyncPay can send 'paid', 'approved', or 'completed' for successful payments
   const isSuccess = ["paid", "approved", "completed", "sucesso", "pago"].includes(normalizedStatus);
 

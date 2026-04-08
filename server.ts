@@ -338,9 +338,13 @@ async function startServer() {
 
   // Webhook SyncPay
   app.post("/api/webhook-syncpay", async (req, res) => {
-    const { status, external_id, id } = req.body;
-    const normalizedStatus = String(status || "").toLowerCase();
+    console.log("Webhook completo:", JSON.stringify(req.body, null, 2));
+    const data = req.body;
+    const status = data?.status || data?.data?.status || data?.payment?.status;
+    const external_id = data?.external_id || data?.data?.external_id;
+    const id = data?.id || data?.data?.id;
     const paymentId = external_id || id;
+    const normalizedStatus = String(status || "").toLowerCase().trim();
     const isSuccess = ["paid", "approved", "completed", "sucesso", "pago"].includes(normalizedStatus);
 
     console.log(`[Webhook] Recebido: status=${status}, id=${id}, external_id=${external_id}`);
