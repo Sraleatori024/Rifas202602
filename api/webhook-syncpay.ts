@@ -9,8 +9,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { status, external_id, id } = req.body;
   const paymentId = external_id || id;
 
-const normalizedStatus = String(status || "").toLowerCase();
-  if (normalizedStatus !== "paid" && normalizedStatus !== "approved") {
+  const normalizedStatus = String(status || "").toLowerCase();
+  // SyncPay can send 'paid', 'approved', or 'completed' for successful payments
+  const isSuccess = ["paid", "approved", "completed", "sucesso", "pago"].includes(normalizedStatus);
+
+  if (!isSuccess) {
+    console.log(`[Webhook] Status ignorado: ${status}`);
     return res.json({ received: true, message: `Status ${status} ignorado` });
   }
 
@@ -87,12 +91,12 @@ async function processPayment(docSnap: any, res: VercelResponse) {
 
   batch.update(raffleRef, {
     sold_count: admin.firestore.FieldValue.increment(numero.length),
-    revenue: admin.firestore.FieldValue.increment(valor),
+    revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
     updated_at: admin.firestore.FieldValue.serverTimestamp()
   });
 
   batch.update(docSnap.ref, {
-    status: "pago",
+    status: "paid",
     paid_at: admin.firestore.FieldValue.serverTimestamp()
   });
 

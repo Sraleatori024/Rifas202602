@@ -826,39 +826,21 @@ const RaffleDetails = () => {
                 </div>
               )}
 
-              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 text-emerald-700 text-sm mb-8 flex items-center gap-3">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping shrink-0" />
-                <p className="text-left leading-tight"><strong>Monitorando pagamento:</strong> Não feche esta página. Seus números serão confirmados em segundos após o pagamento.</p>
+              <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 text-emerald-800 text-sm mb-8 flex items-center gap-4">
+                <div className="relative shrink-0">
+                  <div className="w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
+                  <div className="absolute inset-0 w-3 h-3 bg-emerald-500 rounded-full" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-black text-emerald-900 uppercase tracking-wider text-[10px]">Status: Aguardando Pagamento</p>
+                  <p className="leading-tight opacity-80">Não feche esta página. Seus números serão confirmados automaticamente em segundos após o pagamento ser detectado.</p>
+                </div>
               </div>
 
               <div className="flex flex-col gap-4">
                 <button 
-                  onClick={async () => {
-                    try {
-                      const response = await fetch('/api/webhook-syncpay', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          status: 'paid',
-                          external_id: String(purchaseId || '')
-                        })
-                      });
-                      if (response.ok) {
-                        console.log("Pagamento simulado com sucesso!");
-                      }
-                    } catch (err) {
-                      console.error("Erro ao simular pagamento:", err);
-                    }
-                  }}
-                  className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-lg shadow-xl shadow-emerald-500/20 hover:bg-emerald-600 transition-all flex items-center justify-center gap-3"
-                >
-                  <CheckCircle2 className="w-6 h-6" />
-                  Confirmar Pagamento (Simulação)
-                </button>
-
-                <button 
                   onClick={() => setStep(2)}
-                  className="text-slate-400 hover:text-slate-600 font-bold text-sm transition-colors"
+                  className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-all active:scale-95"
                 >
                   Alterar forma de pagamento ou dados
                 </button>

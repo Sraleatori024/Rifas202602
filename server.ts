@@ -339,14 +339,15 @@ async function startServer() {
   // Webhook SyncPay
   app.post("/api/webhook-syncpay", async (req, res) => {
     const { status, external_id, id } = req.body;
-    const normalizedStatus = status?.toLowerCase();
+    const normalizedStatus = String(status || "").toLowerCase();
     const paymentId = external_id || id;
+    const isSuccess = ["paid", "approved", "completed", "sucesso", "pago"].includes(normalizedStatus);
 
     console.log(`[Webhook] Recebido: status=${status}, id=${id}, external_id=${external_id}`);
 
-    if (normalizedStatus !== "paid" && normalizedStatus !== "approved") {
+    if (!isSuccess) {
       console.log(`[Webhook] Status ignorado: ${status}`);
-      return res.json({ received: true });
+      return res.json({ received: true, message: `Status ${status} ignorado` });
     }
 
     if (!paymentId) {
