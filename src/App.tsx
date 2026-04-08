@@ -364,7 +364,15 @@ const RaffleDetails = () => {
     try {
       const existing = JSON.parse(localStorage.getItem('minhas_rifas') || '[]');
       const updated = [...existing, purchase];
-      localStorage.setItem('minhas_rifas', JSON.stringify(updated));
+      // Ensure we only stringify plain data to avoid circular references (e.g. from Firebase objects)
+      const safeData = updated.map((item: any) => ({
+        raffleId: String(item.raffleId || ''),
+        numbers: Array.isArray(item.numbers) ? [...item.numbers] : [],
+        buyer: String(item.buyer || ''),
+        status: String(item.status || ''),
+        date: String(item.date || '')
+      }));
+      localStorage.setItem('minhas_rifas', JSON.stringify(safeData));
     } catch (e) {
       console.error("Erro ao salvar no localStorage:", e);
     }
@@ -424,6 +432,19 @@ const RaffleDetails = () => {
   };
 
   const handlePurchase = async () => {
+    // 1. Proteção contra múltiplos cliques (Guard Clause)
+    if (generatingPix) {
+      console.log("handlePurchase ignorado: já existe uma requisição em andamento.");
+      return;
+    }
+
+    console.log("handlePurchase iniciado", {
+      raffleId: String(raffleId),
+      numbersCount: selectedNumbers.length,
+      buyerName: buyerInfo.name,
+      packageId: selectedPackage?.id
+    });
+
     if (!buyerInfo.name || !buyerInfo.whatsapp) {
       alert("Por favor, preencha nome e WhatsApp.");
       return;
@@ -436,10 +457,15 @@ const RaffleDetails = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          raffleId,
-          numbers: selectedNumbers,
-          buyer: buyerInfo,
-          packageId: selectedPackage?.id
+          raffleId: String(raffleId),
+          numbers: [...selectedNumbers],
+          buyer: {
+            name: String(buyerInfo.name || ''),
+            whatsapp: String(buyerInfo.whatsapp || ''),
+            instagram: String(buyerInfo.instagram || ''),
+            cpf: String(buyerInfo.cpf || '')
+          },
+          packageId: selectedPackage?.id ? String(selectedPackage.id) : undefined
         })
       });
 
@@ -696,7 +722,7 @@ const RaffleDetails = () => {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Seus Dados</h3>
-                  <p className="text-sm text-slate-500">Informe seus dados para a reserva</p>
+                  <p className="text-sm text-slate-500">Informe seus dados para a compra</p>
                 </div>
               </div>
 
@@ -814,7 +840,7 @@ const RaffleDetails = () => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           status: 'paid',
-                          external_id: purchaseId
+                          external_id: String(purchaseId || '')
                         })
                       });
                       if (response.ok) {
@@ -1019,7 +1045,7 @@ const RaffleDetails = () => {
               </div>
               <div className="space-y-2">
                 <h3 className="text-2xl font-bold text-white">Gerando seu QR Code Pix</h3>
-                <p className="text-slate-400">Aguarde um momento, estamos processando sua reserva...</p>
+                <p className="text-slate-400">Aguarde um momento, estamos processando seu pedido...</p>
               </div>
             </div>
           </motion.div>
@@ -1030,7 +1056,7 @@ const RaffleDetails = () => {
 };
 
 const AdminLogin = ({ onLogin }: { onLogin: (user: User) => void }) => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -1039,7 +1065,10 @@ const AdminLogin = ({ onLogin }: { onLogin: (user: User) => void }) => {
     e.preventDefault();
     setError('');
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // If the username doesn't look like an email, append the default domain
+      const loginEmail = username.includes('@') ? username : `${username}@rifaalice.com`;
+      
+      const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password);
       const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
       
       if (userDoc.exists() && userDoc.data().role === 'admin') {
@@ -1078,13 +1107,14 @@ const AdminLogin = ({ onLogin }: { onLogin: (user: User) => void }) => {
             </div>
           )}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">E-mail</label>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Usuário</label>
             <input 
-              type="email" 
-              value={email}
-              onChange={e => setEmail(e.target.value)}
+              type="text" 
+              value={username}
+              onChange={e => setUsername(e.target.value)}
               className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
               required
+              placeholder="Digite seu usuário"
             />
           </div>
           <div>
@@ -2341,7 +2371,7 @@ const Setup = () => {
         {status === 'error' && <div className="text-red-600 font-bold">Erro: Admin já existe ou falha no servidor.</div>}
 
         <div className="mt-8 p-4 bg-slate-100 rounded-xl text-left text-sm space-y-2">
-          <p><strong>Email:</strong> admin@rifaalice.com</p>
+          <p><strong>Usuário:</strong> admin</p>
           <p><strong>Senha:</strong> RifaAlice@2026#Secure</p>
         </div>
       </div>
@@ -2375,8 +2405,8 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          whatsapp: normalizedPhone || undefined,
-          cpf: normalizedCpf || undefined
+          whatsapp: normalizedPhone ? String(normalizedPhone) : undefined,
+          cpf: normalizedCpf ? String(normalizedCpf) : undefined
         })
       });
       const data = await res.json();

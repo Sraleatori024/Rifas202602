@@ -94,6 +94,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  console.log(`[API] create-payment: Recebendo requisição para rifa ${req.body?.raffleId} do WhatsApp ${req.body?.buyer?.whatsapp}`);
+
   try {
     const db = getDb();
     if (!req.body) {
