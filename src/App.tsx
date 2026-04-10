@@ -1546,7 +1546,7 @@ const AdminDashboard = () => {
       });
 
     } catch (err: any) {
-      console.error("Erro ao realizar sorteio:", err.message || err);
+      console.error("Erro ao realizar sorteio:", err.message || String(err));
       alert(`Erro ao realizar sorteio: ${err.message || "Erro desconhecido"}`);
     }
   };
@@ -1627,7 +1627,7 @@ const AdminDashboard = () => {
       });
       alert("Rifa salva com sucesso!");
     } catch (err: any) {
-      console.error("Erro ao salvar rifa:", err.message || err);
+      console.error("Erro ao salvar rifa:", err.message || String(err));
       alert(`Erro ao salvar rifa: ${err.message || "Erro desconhecido"}`);
     } finally {
       setCreating(false);
@@ -1870,8 +1870,8 @@ const AdminDashboard = () => {
                     ...winner
                   });
                 }
-              } catch (err) {
-                console.error("Error saving winners:", err.message || err);
+              } catch (err: any) {
+                console.error("Error saving winners:", err.message || String(err));
               }
             };
             saveWinners();
@@ -2340,7 +2340,7 @@ const Setup = () => {
       setStatus('success');
       setTimeout(() => navigate('/admin/login'), 2000);
     } catch (err: any) {
-      console.error(err);
+      console.error("Setup error:", err.message || String(err));
       setStatus('error');
     }
   };
@@ -2406,8 +2406,8 @@ export default function App() {
         alert(data.message || "Nenhuma compra encontrada");
       }
     } catch (err: any) {
-      console.error("Erro de conexão:", err.message || err);
-      if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
+      console.error("Erro de conexão:", err.message || String(err));
+      if (err.message?.includes('Quota exceeded') || String(err).includes('Quota exceeded')) {
         alert("Limite de consultas atingido para hoje. Por favor, tente novamente mais tarde.");
       } else {
         alert("Erro de conexão.");
@@ -2435,7 +2435,7 @@ export default function App() {
             setUser({ email: firebaseUser.email!, role: 'client' }); // Default to client if doc missing
           }
         } catch (err: any) {
-          console.error("Error fetching user document:", err.message || err);
+          console.error("Error fetching user document:", err.message || String(err));
           if (err.code === 'permission-denied') {
             console.error("Firestore permission denied. Please check your security rules.");
           }

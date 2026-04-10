@@ -295,7 +295,7 @@ async function startServer() {
 
   // Webhook SyncPay
   app.post("/api/webhook-syncpay", async (req, res) => {
-    console.log("Webhook completo:", JSON.stringify(req.body, null, 2));
+    console.log("Webhook completo:", req.body);
     const data = req.body;
     const status = data?.status || data?.data?.status || data?.payment?.status;
     const external_id = data?.external_id || data?.data?.external_id;

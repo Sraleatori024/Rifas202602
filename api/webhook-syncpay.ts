@@ -6,7 +6,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  console.log("Webhook completo:", JSON.stringify(req.body, null, 2));
+  console.log("Webhook completo:", req.body);
   const data = req.body;
   const status = data?.status || data?.data?.status || data?.payment?.status;
   const external_id = data?.external_id || data?.data?.external_id;
