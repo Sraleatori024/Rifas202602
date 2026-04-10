@@ -1,7 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb, admin } from '../lib/firebase-admin.js';
 
-const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
+const normalizePhone = (phone: string) => {
+  let clean = String(phone || "").replace(/\D/g, "");
+  // Se começar com 55 e tiver 12 ou 13 dígitos, remove o 55 para busca consistente
+  if (clean.startsWith("55") && (clean.length === 12 || clean.length === 13)) {
+    clean = clean.substring(2);
+  }
+  return clean;
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -26,7 +33,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const q2 = db.collection("compras").where("cpf", "==", normalizedCpf).get();
       snapshots = await Promise.all([q1, q2]);
     } else if (phone) {
-      snapshots = [await db.collection("compras").where("telefone", "==", phone).get()];
+      const q1 = db.collection("compras").where("telefone", "==", phone).get();
+      const q2 = db.collection("compras").where("telefone", "==", "55" + phone).get();
+      snapshots = await Promise.all([q1, q2]);
     } else if (normalizedCpf) {
       snapshots = [await db.collection("compras").where("cpf", "==", normalizedCpf).get()];
     }
@@ -35,33 +44,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ success: false, message: "Nenhuma compra encontrada" });
     }
 
-    let pendingPurchases: any[] = [];
-    let confirmedNumbers: number[] = [];
+    let confirmedNumbers: any[] = [];
     let name = "";
-
     const processedDocs = new Set<string>();
+    const raffleNames: Record<string, string> = {};
 
     for (const snapshot of snapshots) {
-      snapshot.forEach(doc => {
-        if (processedDocs.has(doc.id)) return;
+      for (const doc of snapshot.docs) {
+        if (processedDocs.has(doc.id)) continue;
         processedDocs.add(doc.id);
 
         const data = doc.data();
         if (data.numero && Array.isArray(data.numero)) {
           if (data.status === "paid" || data.status === "pago") {
-            confirmedNumbers = [...confirmedNumbers, ...data.numero];
+            const rifaId = data.rifaId;
+            if (rifaId && !raffleNames[rifaId]) {
+              const rSnap = await db.collection("raffles").doc(rifaId).get();
+              if (rSnap.exists) {
+                raffleNames[rifaId] = rSnap.data()?.name || "Rifa";
+              }
+            }
+            
+            confirmedNumbers.push({
+              raffleName: raffleNames[rifaId] || "Rifa",
+              numbers: data.numero
+            });
           }
         }
         if (!name && data.nome) name = data.nome;
-      });
+      }
     }
-
-    // Remover duplicatas e ordenar números confirmados
-    confirmedNumbers = [...new Set(confirmedNumbers)].sort((a, b) => a - b);
 
     res.json({
       success: true,
-      confirmed: confirmedNumbers,
+      purchases: confirmedNumbers,
       name: name
     });
 

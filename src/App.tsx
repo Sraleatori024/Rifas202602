@@ -380,18 +380,22 @@ const RaffleDetails = () => {
 
   useEffect(() => {
     if (!purchaseId) return;
+    console.log("Monitorando compra:", purchaseId);
     const unsub = onSnapshot(doc(db, "compras", purchaseId), (docSnap) => {
-      if (docSnap.exists() && docSnap.data().status === 'paid') {
+      if (docSnap.exists()) {
         const data = docSnap.data();
-        // Save to local storage when paid
-        saveToLocalStorage({
-          raffleId: data.rifaId,
-          numbers: data.numero,
-          buyer: data.nome,
-          status: 'pago',
-          date: new Date().toISOString()
-        });
-        setStep(4);
+        console.log("Status da compra atualizado:", data.status);
+        if (data.status === 'paid' || data.status === 'pago') {
+          // Save to local storage when paid
+          saveToLocalStorage({
+            raffleId: data.rifaId,
+            numbers: data.numero,
+            buyer: data.nome,
+            status: 'pago',
+            date: new Date().toISOString()
+          });
+          setStep(4);
+        }
       }
     });
     return () => unsub();
@@ -2380,7 +2384,11 @@ export default function App() {
     setConsulting(true);
     setConsultResult(null);
     try {
-      const normalizedPhone = phone.replace(/\D/g, '');
+      let normalizedPhone = phone.replace(/\D/g, '');
+      if (normalizedPhone.startsWith("55") && (normalizedPhone.length === 12 || normalizedPhone.length === 13)) {
+        normalizedPhone = normalizedPhone.substring(2);
+      }
+      
       const normalizedCpf = cpf.replace(/\D/g, '');
       
       const res = await fetch('/api/consultar-numeros', {
@@ -2603,27 +2611,29 @@ export default function App() {
                       </div>
 
                       <div className="space-y-6">
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between px-1">
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Meus Números Pagos</p>
-                            <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-black rounded-lg">
-                              {consultResult.confirmed.length}
-                            </span>
+                        {consultResult.purchases.length === 0 ? (
+                          <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
+                            <p className="text-sm text-slate-400 font-bold">Nenhum número pago encontrado.</p>
                           </div>
-                          {consultResult.confirmed.length === 0 ? (
-                            <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
-                              <p className="text-sm text-slate-400 font-bold">Nenhum número pago encontrado.</p>
+                        ) : (
+                          consultResult.purchases.map((purchase: any, pIdx: number) => (
+                            <div key={pIdx} className="space-y-4 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                              <div className="flex items-center justify-between px-1">
+                                <p className="text-xs font-black text-slate-900 uppercase tracking-widest">{purchase.raffleName}</p>
+                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-lg">
+                                  {purchase.numbers.length} números
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                {purchase.numbers.sort((a: number, b: number) => a - b).map((n: number) => (
+                                  <div key={n} className="aspect-square flex items-center justify-center bg-white text-emerald-600 text-sm font-black rounded-xl border border-emerald-100 shadow-sm">
+                                    {n.toString().padStart(2, '0')}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          ) : (
-                            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
-                              {consultResult.confirmed.map((n: number) => (
-                                <div key={n} className="aspect-square flex items-center justify-center bg-emerald-50 text-emerald-600 text-base font-black rounded-2xl border-2 border-emerald-100 shadow-sm">
-                                  {n.toString().padStart(2, '0')}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                          ))
+                        )}
                       </div>
                     </div>
 

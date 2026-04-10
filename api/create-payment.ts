@@ -1,7 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb, admin } from '../lib/firebase-admin.js';
 
-const normalizePhone = (phone: string) => String(phone || "").replace(/\D/g, "");
+const normalizePhone = (phone: string) => {
+  let clean = String(phone || "").replace(/\D/g, "");
+  // Se começar com 55 e tiver 12 ou 13 dígitos, remove o 55 para busca consistente
+  if (clean.startsWith("55") && (clean.length === 12 || clean.length === 13)) {
+    clean = clean.substring(2);
+  }
+  return clean;
+};
 const normalizeCPF = (cpf: string) => {
   const clean = cpf ? String(cpf).replace(/\D/g, "") : "";
   return clean.length === 11 ? clean : "00000000000";
@@ -11,10 +18,6 @@ async function generateToken() {
   const clientId = process.env.PIX_API_CLIENT_ID || process.env.SYNC_CLIENT_ID;
   const clientSecret = process.env.PIX_API_CLIENT_SECRET || process.env.SYNC_CLIENT_SECRET;
   const apiUrl = process.env.PIX_API_URL || "https://api.syncpayments.com.br";
-
-  console.log("API URL:", apiUrl);
-  console.log("API CLIENT_ID definido:", !!clientId);
-  console.log("API CLIENT_SECRET definido:", !!clientSecret);
 
   if (!clientId || !clientSecret) {
     throw new Error("Configuração de API SyncPayments (PIX_API_CLIENT_ID ou PIX_API_CLIENT_SECRET) ausente.");
@@ -48,12 +51,10 @@ async function generateToken() {
 
 async function createCashIn(token: string, payload: any) {
   const apiUrl = process.env.PIX_API_URL || "https://api.syncpayments.com.br";
-  // Validações robustas antes do envio
   if (!token) throw new Error("Token de autorização ausente");
   if (!payload.amount || payload.amount <= 0) throw new Error("Valor da transação deve ser positivo");
   if (!payload.webhook_url) throw new Error("URL de Webhook não configurada no ambiente");
 
-    // Log simplificado para evitar erros de estrutura circular
     console.log("Iniciando Cash-In SyncPayments...");
     console.log("Payload Enviado (ID):", payload.external_id);
 
@@ -76,7 +77,6 @@ async function createCashIn(token: string, payload: any) {
       throw new Error(result.message || "Erro retornado pela API SyncPayments");
     }
 
-    // Extração de dados com fallback seguro
     const data = result.data || result;
     return {
       pix_code: data.pix_code || data.pix_qrcode || data.qrcode || "",
@@ -104,7 +104,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { raffleId, numbers: requestedNumbers, buyer, packageId } = req.body;
 
-    // 1. DADOS_INCOMPLETOS
     if (!raffleId || (!requestedNumbers?.length && !packageId) || !buyer || !buyer.whatsapp || !buyer.name) {
       return res.status(400).json({ 
         success: false, 
@@ -113,9 +112,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 2. TELEFONE_INVALIDO
-    const normalizedPhone = normalizePhone(buyer.whatsapp);
-    if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+    const normalizedPhoneVal = normalizePhone(buyer.whatsapp);
+    if (normalizedPhoneVal.length < 10 || normalizedPhoneVal.length > 11) {
       return res.status(400).json({
         success: false,
         code: "TELEFONE_INVALIDO",
@@ -123,9 +121,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 3. CPF_INVALIDO (Se enviado, deve ter 11 dígitos)
-    const normalizedCPF = normalizeCPF(buyer.cpf);
-    if (buyer.cpf && normalizedCPF.length !== 11) {
+    const normalizedCPFVal = normalizeCPF(buyer.cpf);
+    if (buyer.cpf && normalizedCPFVal.length !== 11) {
       return res.status(400).json({
         success: false,
         code: "CPF_INVALIDO",
@@ -133,112 +130,71 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 1. Handle User (Simple System)
-    const userRef = db.collection("users").doc(normalizePhone(buyer.whatsapp));
-    const userSnap = await userRef.get();
+    // 1. Fetch Raffle Data (Single Read)
+    const raffleRef = db.collection("raffles").doc(raffleId);
+    const raffleSnap = await raffleRef.get();
     
-    if (!userSnap.exists) {
-      await userRef.set({
-        name: buyer.name || "Cliente",
-        whatsapp: normalizePhone(buyer.whatsapp),
-        instagram: buyer.instagram || "",
-        created_at: admin.firestore.FieldValue.serverTimestamp()
-      });
+    if (!raffleSnap.exists) {
+      return res.status(404).json({ success: false, message: "Rifa não encontrada." });
     }
 
-    const raffleRef = db.collection("raffles").doc(raffleId);
-    const numbersRef = raffleRef.collection("numbers");
+    const raffleData = raffleSnap.data()!;
+    let totalAmount = 0;
+    let finalNumbers: number[] = [];
+    let quantityNeeded = 0;
 
-    // Generate a unique identifier for this purchase
-    const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // 2. Identify Numbers and Calculate Price
+    if (packageId) {
+      const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
+      if (!pkg) {
+        return res.status(400).json({ success: false, message: "Pacote não encontrado." });
+      }
+      quantityNeeded = pkg.quantity;
+      totalAmount = pkg.price;
 
-    // Use a transaction to check and reserve numbers atomically
-    const result = await db.runTransaction(async (transaction) => {
-      const raffleSnap = await transaction.get(raffleRef);
-      if (!raffleSnap.exists) {
-        throw new Error("Rifa não encontrada.");
+      // Find available numbers (Fast query)
+      const availableSnap = await raffleRef.collection("numbers")
+        .where("status", "==", "disponivel")
+        .limit(quantityNeeded)
+        .get();
+
+      if (availableSnap.size < quantityNeeded) {
+        return res.status(400).json({ success: false, message: "Não há números disponíveis suficientes para este pacote." });
+      }
+      finalNumbers = availableSnap.docs.map(d => d.data().number);
+    } else {
+      const unitPrice = raffleData.price || 0;
+      quantityNeeded = requestedNumbers.length;
+      totalAmount = quantityNeeded * unitPrice;
+      finalNumbers = requestedNumbers;
+
+      // Quick check for sold numbers (Parallel queries)
+      const chunks = [];
+      for (let i = 0; i < requestedNumbers.length; i += 30) {
+        chunks.push(requestedNumbers.slice(i, i + 30));
       }
 
-      const raffleData = raffleSnap.data()!;
-      let totalAmount = 0;
-      let finalNumbers: number[] = [];
-      let quantityNeeded = 0;
+      const checkResults = await Promise.all(chunks.map(chunk => 
+        raffleRef.collection("numbers")
+          .where("number", "in", chunk)
+          .where("status", "in", ["pago", "confirmed"])
+          .limit(1)
+          .get()
+      ));
 
-      if (packageId) {
-        const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
-        if (!pkg) {
-          throw new Error("Pacote não encontrado.");
+      for (const snap of checkResults) {
+        if (!snap.empty) {
+          return res.status(400).json({ 
+            success: false, 
+            message: `O número ${snap.docs[0].data().number} já foi vendido.` 
+          });
         }
-        quantityNeeded = pkg.quantity;
-        if (requestedNumbers?.length && requestedNumbers.length !== pkg.quantity) {
-          throw new Error("Quantidade de números não corresponde ao pacote.");
-        }
-        totalAmount = pkg.price;
-      } else {
-        const unitPrice = raffleData.price || 0;
-        quantityNeeded = requestedNumbers.length;
-        totalAmount = quantityNeeded * unitPrice;
       }
+    }
 
-      const snapshotsToUpdate: admin.firestore.QueryDocumentSnapshot[] = [];
-
-      if (requestedNumbers?.length) {
-        // Check specific numbers requested by client
-        const numbersChunks = [];
-        for (let i = 0; i < requestedNumbers.length; i += 30) {
-          numbersChunks.push(requestedNumbers.slice(i, i + 30));
-        }
-
-        for (const chunk of numbersChunks) {
-          const selectedNumbersSnap = await transaction.get(
-            numbersRef.where("number", "in", chunk)
-          );
-
-            selectedNumbersSnap.forEach((doc) => {
-              const data = doc.data();
-              if (data.status === "pago" || data.status === "confirmed") {
-                throw new Error(`O número ${data.number} já foi comprado.`);
-              }
-              snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
-              finalNumbers.push(data.number);
-            });
-        }
-
-        if (finalNumbers.length !== requestedNumbers.length) {
-          throw new Error("Alguns números solicitados não foram encontrados.");
-        }
-      } else {
-        // Automatic selection for package
-        const availableSnap = await transaction.get(
-          numbersRef.where("status", "!=", "pago").limit(quantityNeeded)
-        );
-
-        if (availableSnap.size < quantityNeeded) {
-          throw new Error("Não há números disponíveis suficientes para este pacote.");
-        }
-
-        availableSnap.forEach((doc) => {
-          snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
-          finalNumbers.push(doc.data().number);
-        });
-      }
-
-      // Vincular informações do comprador aos números (sem alterar o status para manter como livre até o pagamento)
-      for (const docSnap of snapshotsToUpdate) {
-        transaction.update(docSnap.ref, {
-          buyer_name: buyer.name,
-          buyer_whatsapp: normalizePhone(buyer.whatsapp)
-        });
-      }
-
-      if (totalAmount <= 0) {
-        throw new Error("O valor total da compra deve ser maior que zero.");
-      }
-
-      return { totalAmount, raffleData, finalNumbers };
-    });
-
-    const { totalAmount, raffleData, finalNumbers } = result;
+    if (totalAmount <= 0) {
+      return res.status(400).json({ success: false, message: "O valor total da compra deve ser maior que zero." });
+    }
 
     // 3. Get Auth Token from SyncPayments
     let accessToken;
@@ -263,6 +219,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
     const appUrl = rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl;
+    const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
     const payload = {
       amount: Number(totalAmount),
       description: `Pagamento Rifa: ${raffleData.name || "Sorteio"}`,
@@ -278,8 +236,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let syncPayResult;
     try {
-      console.log("CPF enviado:", payload.client.cpf);
-      console.log("Webhook URL:", payload.webhook_url);
       syncPayResult = await createCashIn(accessToken, payload);
     } catch (apiError: any) {
       return res.status(500).json({
@@ -290,7 +246,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const { pix_code, paymentCodeBase64 } = syncPayResult;
+    const { pix_code } = syncPayResult;
 
     if (!pix_code) {
       return res.status(500).json({
@@ -344,4 +300,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 }
-

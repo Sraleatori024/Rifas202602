@@ -8,9 +8,13 @@ import { getDb, admin } from "./lib/firebase-admin.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 3) Corrigir telefone para remover () e espaços
+// 3) Corrigir telefone para remover () e espaços e normalizar prefixo 55
 const normalizePhone = (phone: string) => {
-  const clean = String(phone || "").replace(/\D/g, "");
+  let clean = String(phone || "").replace(/\D/g, "");
+  // Se começar com 55 e tiver 12 ou 13 dígitos, remove o 55 para busca consistente
+  if (clean.startsWith("55") && (clean.length === 12 || clean.length === 13)) {
+    clean = clean.substring(2);
+  }
   return clean;
 };
 
@@ -26,16 +30,10 @@ async function generateToken() {
   const clientSecret = process.env.PIX_API_CLIENT_SECRET || process.env.SYNC_CLIENT_SECRET;
   const apiUrl = process.env.PIX_API_URL || "https://api.syncpayments.com.br";
 
-  console.log("API URL:", apiUrl);
-  console.log("API CLIENT_ID definido:", !!clientId);
-  console.log("API CLIENT_SECRET definido:", !!clientSecret);
-
   if (!clientId || !clientSecret) {
     throw new Error("Configuração de API SyncPayments (PIX_API_CLIENT_ID ou PIX_API_CLIENT_SECRET) ausente.");
   }
 
-  console.log("Gerando token de acesso SyncPayments...");
-  
   try {
     const response = await fetch(`${apiUrl}/api/partner/v1/auth-token`, {
       method: "POST",
@@ -63,7 +61,6 @@ async function generateToken() {
 // 2) Usar esse token para criar o PIX
 async function createCashIn(token: string, payload: any) {
   const apiUrl = process.env.PIX_API_URL || "https://api.syncpayments.com.br";
-  console.log("Iniciando Cash-In SyncPayments...");
   
   try {
     const response = await fetch(`${apiUrl}/api/partner/v1/cash-in`, {
@@ -78,14 +75,10 @@ async function createCashIn(token: string, payload: any) {
 
     const result = await response.json();
     
-    // 8) Tratar erros corretamente e mostrar no console
-    console.log("SYNC RESPONSE:", result);
-
     if (!response.ok || result.success === false) {
       throw new Error(result.message || "Erro na API SyncPayments");
     }
 
-    // A API retorna pix_code no corpo principal ou dentro de data
     const data = result.data || result;
     
     return {
@@ -115,8 +108,6 @@ async function startServer() {
   app.post("/api/create-payment", async (req, res) => {
     const { raffleId, numbers: requestedNumbers, buyer, packageId } = req.body;
     
-    // 1. DADOS_INCOMPLETOS
-    // Allow empty numbers if packageId is present
     if (!raffleId || (!requestedNumbers?.length && !packageId) || !buyer || !buyer.whatsapp || !buyer.name) {
       return res.status(400).json({ 
         success: false, 
@@ -125,9 +116,8 @@ async function startServer() {
       });
     }
 
-    // 2. TELEFONE_INVALIDO
-    const normalizedPhone = normalizePhone(buyer.whatsapp);
-    if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+    const normalizedPhoneVal = normalizePhone(buyer.whatsapp);
+    if (normalizedPhoneVal.length < 10 || normalizedPhoneVal.length > 11) {
       return res.status(400).json({
         success: false,
         code: "TELEFONE_INVALIDO",
@@ -135,9 +125,8 @@ async function startServer() {
       });
     }
 
-    // 3. CPF_INVALIDO (Se enviado, deve ter 11 dígitos)
-    const normalizedCPF = normalizeCPF(buyer.cpf);
-    if (buyer.cpf && normalizedCPF.length !== 11) {
+    const normalizedCPFVal = normalizeCPF(buyer.cpf);
+    if (buyer.cpf && normalizedCPFVal.length !== 11) {
       return res.status(400).json({
         success: false,
         code: "CPF_INVALIDO",
@@ -147,99 +136,73 @@ async function startServer() {
 
     try {
       const db = getDb();
+      // 1. Fetch Raffle Data (Single Read)
       const raffleRef = db.collection("raffles").doc(raffleId);
-      const numbersRef = raffleRef.collection("numbers");
+      const raffleSnap = await raffleRef.get();
+      
+      if (!raffleSnap.exists) {
+        return res.status(404).json({ success: false, message: "Rifa não encontrada." });
+      }
 
-      // Generate a unique identifier for this purchase
-      const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const raffleData = raffleSnap.data()!;
+      let totalAmount = 0;
+      let finalNumbers: number[] = [];
+      let quantityNeeded = 0;
 
-      // Use a transaction to check and reserve numbers atomically
-      const result = await db.runTransaction(async (transaction) => {
-        const raffleSnap = await transaction.get(raffleRef);
-        if (!raffleSnap.exists) {
-          throw new Error("Rifa não encontrada.");
+      // 2. Identify Numbers and Calculate Price
+      if (packageId) {
+        const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
+        if (!pkg) {
+          return res.status(400).json({ success: false, message: "Pacote não encontrado." });
+        }
+        quantityNeeded = pkg.quantity;
+        totalAmount = pkg.price;
+
+        // Find available numbers (Fast query)
+        const availableSnap = await raffleRef.collection("numbers")
+          .where("status", "==", "disponivel")
+          .limit(quantityNeeded)
+          .get();
+
+        if (availableSnap.size < quantityNeeded) {
+          return res.status(400).json({ success: false, message: "Não há números disponíveis suficientes para este pacote." });
+        }
+        finalNumbers = availableSnap.docs.map(d => d.data().number);
+      } else {
+        const unitPrice = raffleData.price || 0;
+        quantityNeeded = requestedNumbers.length;
+        totalAmount = quantityNeeded * unitPrice;
+        finalNumbers = requestedNumbers;
+
+        // Quick check for sold numbers (Parallel queries)
+        const chunks = [];
+        for (let i = 0; i < requestedNumbers.length; i += 30) {
+          chunks.push(requestedNumbers.slice(i, i + 30));
         }
 
-        const raffleData = raffleSnap.data()!;
-        let totalAmount = 0;
-        let finalNumbers: number[] = [];
-        let quantityNeeded = 0;
+        const checkResults = await Promise.all(chunks.map(chunk => 
+          raffleRef.collection("numbers")
+            .where("number", "in", chunk)
+            .where("status", "in", ["pago", "confirmed"])
+            .limit(1)
+            .get()
+        ));
 
-        if (packageId) {
-          const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
-          if (!pkg) {
-            throw new Error("Pacote não encontrado.");
-          }
-          quantityNeeded = pkg.quantity;
-          if (requestedNumbers?.length && requestedNumbers.length !== pkg.quantity) {
-            throw new Error("Quantidade de números não corresponde ao pacote.");
-          }
-          totalAmount = pkg.price;
-        } else {
-          const unitPrice = raffleData.price || 0;
-          quantityNeeded = requestedNumbers.length;
-          totalAmount = quantityNeeded * unitPrice;
-        }
-
-        const snapshotsToUpdate: admin.firestore.QueryDocumentSnapshot[] = [];
-
-        if (requestedNumbers?.length) {
-          // Check specific numbers requested by client
-          const numbersChunks = [];
-          for (let i = 0; i < requestedNumbers.length; i += 30) {
-            numbersChunks.push(requestedNumbers.slice(i, i + 30));
-          }
-
-          for (const chunk of numbersChunks) {
-            const selectedNumbersSnap = await transaction.get(
-              numbersRef.where("number", "in", chunk)
-            );
-
-            selectedNumbersSnap.forEach((doc) => {
-              const data = doc.data();
-              if (data.status === "pago" || data.status === "confirmed") {
-                throw new Error(`O número ${data.number} já foi comprado.`);
-              }
-              snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
-              finalNumbers.push(data.number);
+        for (const snap of checkResults) {
+          if (!snap.empty) {
+            return res.status(400).json({ 
+              success: false, 
+              message: `O número ${snap.docs[0].data().number} já foi vendido.` 
             });
           }
-
-          if (finalNumbers.length !== requestedNumbers.length) {
-            throw new Error("Alguns números solicitados não foram encontrados.");
-          }
-        } else {
-          // Automatic selection for package
-          const availableSnap = await transaction.get(
-            numbersRef.where("status", "!=", "pago").limit(quantityNeeded)
-          );
-
-          if (availableSnap.size < quantityNeeded) {
-            throw new Error("Não há números disponíveis suficientes para este pacote.");
-          }
-
-          availableSnap.forEach((doc) => {
-            snapshotsToUpdate.push(doc as admin.firestore.QueryDocumentSnapshot);
-            finalNumbers.push(doc.data().number);
-          });
         }
+      }
 
-        // Vincular informações do comprador aos números (sem alterar o status para manter como livre até o pagamento)
-        for (const docSnap of snapshotsToUpdate) {
-          transaction.update(docSnap.ref, {
-            buyer_name: buyer.name,
-            buyer_whatsapp: normalizePhone(buyer.whatsapp)
-          });
-        }
+      if (totalAmount <= 0) {
+        return res.status(400).json({ success: false, message: "O valor total da compra deve ser maior que zero." });
+      }
 
-        if (totalAmount <= 0) {
-          throw new Error("O valor total da compra deve ser maior que zero.");
-        }
-
-        return { totalAmount, raffleData, finalNumbers };
-      });
-
-      const { totalAmount, raffleData, finalNumbers } = result;
+      const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
       // 4. API_PAGAMENTO_ERRO
       let accessToken;
@@ -254,28 +217,25 @@ async function startServer() {
         });
       }
 
-    // 3. Criar Pagamento na SyncPayments
-    const rawAppUrl = process.env.APP_URL || "https://ais-dev-qe6hjdlzyao7gwzeoa7fvv-101643794289.us-east1.run.app";
-    const appUrl = rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl;
-    const payload = {
-      amount: Number(totalAmount.toFixed(2)),
-      description: `Compra de rifa: ${raffleData.name || "Sorteio"}`,
-      webhook_url: `${appUrl}/api/webhook-syncpay`,
-      external_id: identifier,
-      client: {
+      // 3. Criar Pagamento na SyncPayments
+      const rawAppUrl = process.env.APP_URL;
+      const appUrl = rawAppUrl ? (rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl) : "";
+      const payload = {
+        amount: Number(totalAmount.toFixed(2)),
+        description: `Compra de rifa: ${raffleData.name || "Sorteio"}`,
+        webhook_url: `${appUrl}/api/webhook-syncpay`,
+        external_id: identifier,
+        client: {
           name: buyer.name,
-          cpf: normalizedCPF,
+          cpf: normalizedCPFVal,
           email: buyer.email || "cliente@exemplo.com",
           phone: normalizePhone(buyer.whatsapp)
         }
       };
 
-      // 5. PIX_GERACAO_ERRO
       let syncPayResult;
       try {
-        console.log("Enviando payload para SyncPayments (ID):", payload.external_id);
         syncPayResult = await createCashIn(accessToken, payload);
-        console.log("Resultado SyncPayments recebido.");
       } catch (apiError: any) {
         return res.status(500).json({
           success: false,
@@ -294,10 +254,8 @@ async function startServer() {
         });
       }
 
-      // 6) Gerar QR Code automaticamente usando a biblioteca qrcode
       const qrCodeBase64 = await QRCode.toDataURL(pix_code);
 
-      // 5) Retornar para o frontend: pix_code, qr_code (base64), identifier, numbers, valor, cpf
       const responseData = {
         success: true,
         pix_code: pix_code,
@@ -305,10 +263,9 @@ async function startServer() {
         identifier: identifier,
         numbers: finalNumbers,
         valor: totalAmount,
-        cpf: normalizedCPF || buyer.cpf || ""
+        cpf: normalizedCPFVal || buyer.cpf || ""
       };
 
-      // Salvar registro do pedido no Firestore
       const compraRef = getDb().collection("compras").doc(identifier);
       await compraRef.set({
         nome: buyer.name,
@@ -347,8 +304,6 @@ async function startServer() {
     const normalizedStatus = String(status || "").toLowerCase().trim();
     const isSuccess = ["paid", "approved", "completed", "sucesso", "pago"].includes(normalizedStatus);
 
-    console.log(`[Webhook] Recebido: status=${status}, id=${id}, external_id=${external_id}`);
-
     if (!isSuccess) {
       console.log(`[Webhook] Status ignorado: ${status}`);
       return res.json({ received: true, message: `Status ${status} ignorado` });
@@ -363,7 +318,6 @@ async function startServer() {
       let paymentSnap = null;
       let paymentRef = null;
 
-      // 1. Tenta buscar pelo ID do documento (caso o ID da SyncPay coincida ou tenha sido usado como ID do doc)
       if (id) {
         const ref = getDb().collection("compras").doc(String(id));
         const snap = await ref.get();
@@ -373,7 +327,6 @@ async function startServer() {
         }
       }
 
-      // 2. Se não encontrou, busca pelo campo 'identifier' (que é o nosso external_id)
       if (!paymentSnap && external_id) {
         const q = await getDb().collection("compras").where("identifier", "==", String(external_id)).limit(1).get();
         if (!q.empty) {
@@ -389,21 +342,17 @@ async function startServer() {
 
       const purchaseData = paymentSnap.data();
       if (purchaseData.status === "paid") {
-        console.log(`[Webhook] Compra ${paymentId} já processada.`);
         return res.json({ 
           success: true, 
           message: "Pagamento já confirmado! Boa sorte 🍀" 
         });
       }
 
-      console.log(`[Webhook] Processando pagamento para compra: ${paymentSnap.id}`);
-      
       const { rifaId, numero, nome, telefone, valor } = purchaseData;
       const batch = getDb().batch();
       const raffleRef = getDb().collection("raffles").doc(rifaId);
       const numbersRef = raffleRef.collection("numbers");
 
-      // Update numbers to 'confirmed'
       const numbersToConfirm = Array.isArray(numero) ? numero : [numero];
       const numbersChunks = [];
       for (let i = 0; i < numbersToConfirm.length; i += 30) {
@@ -422,20 +371,17 @@ async function startServer() {
         }
       }
 
-      // Update raffle stats
       batch.update(raffleRef, {
         sold_count: admin.firestore.FieldValue.increment(numbersToConfirm.length),
         revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      // Mark payment as paid
       batch.update(paymentRef!, {
         status: "paid",
         paid_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      // Associate numbers with user
       const userPhone = normalizePhone(telefone);
       if (userPhone) {
         const userRef = getDb().collection("users").doc(userPhone);
@@ -451,12 +397,7 @@ async function startServer() {
       }
 
       await batch.commit();
-      console.log(`[Webhook] Pagamento ${paymentId} processado com sucesso. Números: ${numbersToConfirm.join(', ')}`);
-      
-      res.json({ 
-        success: true, 
-        message: "Pagamento confirmado! Boa sorte 🍀" 
-      });
+      res.json({ success: true, message: "Pagamento confirmado! Boa sorte 🍀" });
 
     } catch (error: any) {
       console.error("[Webhook Error]:", error.message || error);
@@ -479,6 +420,8 @@ async function startServer() {
       const phone = whatsapp ? normalizePhone(whatsapp) : null;
       const cleanCpf = cpf ? normalizeCPF(cpf) : null;
 
+      console.log(`[Consultar] Buscando por Telefone: ${phone}, CPF: ${cleanCpf}`);
+
       const db = getDb();
       let snapshots: admin.firestore.QuerySnapshot[] = [];
 
@@ -487,7 +430,10 @@ async function startServer() {
         const q2 = db.collection("compras").where("cpf", "==", cleanCpf).get();
         snapshots = await Promise.all([q1, q2]);
       } else if (phone) {
-        snapshots = [await db.collection("compras").where("telefone", "==", phone).get()];
+        // Busca pelo telefone normalizado e também tenta com prefixo 55 caso tenha sido salvo assim
+        const q1 = db.collection("compras").where("telefone", "==", phone).get();
+        const q2 = db.collection("compras").where("telefone", "==", "55" + phone).get();
+        snapshots = await Promise.all([q1, q2]);
       } else if (cleanCpf) {
         snapshots = [await db.collection("compras").where("cpf", "==", cleanCpf).get()];
       }
@@ -496,33 +442,40 @@ async function startServer() {
         return res.json({ success: false, message: "Nenhuma compra encontrada" });
       }
 
-      let confirmedNumbers: number[] = [];
+      let confirmedNumbers: any[] = [];
       let name = "";
-
-      // Usar um Map para evitar duplicatas de documentos se o mesmo doc for retornado em ambas as queries
       const processedDocs = new Set<string>();
+      const raffleNames: Record<string, string> = {};
 
       for (const snapshot of snapshots) {
-        snapshot.forEach(doc => {
-          if (processedDocs.has(doc.id)) return;
+        for (const doc of snapshot.docs) {
+          if (processedDocs.has(doc.id)) continue;
           processedDocs.add(doc.id);
 
           const data = doc.data();
           if (data.numero && Array.isArray(data.numero)) {
             if (data.status === "paid" || data.status === "pago") {
-              confirmedNumbers = [...confirmedNumbers, ...data.numero];
+              const rifaId = data.rifaId;
+              if (rifaId && !raffleNames[rifaId]) {
+                const rSnap = await db.collection("raffles").doc(rifaId).get();
+                if (rSnap.exists) {
+                  raffleNames[rifaId] = rSnap.data()?.name || "Rifa";
+                }
+              }
+              
+              confirmedNumbers.push({
+                raffleName: raffleNames[rifaId] || "Rifa",
+                numbers: data.numero
+              });
             }
           }
           if (!name && data.nome) name = data.nome;
-        });
+        }
       }
-
-      // Remover duplicatas e ordenar
-      confirmedNumbers = [...new Set(confirmedNumbers)].sort((a, b) => a - b);
 
       res.json({
         success: true,
-        confirmed: confirmedNumbers,
+        purchases: confirmedNumbers,
         name: name
       });
     } catch (error: any) {
@@ -531,7 +484,6 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
