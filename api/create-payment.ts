@@ -281,7 +281,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (error: any) {
-    console.error("Error in create-payment:", error.message || error);
+    console.error("Error in create-payment:", error.message || String(error));
     
     if (error.code === 8 || error.message?.includes('Quota exceeded')) {
       return res.status(429).json({

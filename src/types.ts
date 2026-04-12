@@ -5,6 +5,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function isPago(status: string | undefined): boolean {
+  if (!status) return false;
+  return ["paid", "pago"].includes(status.toLowerCase());
+}
+
 export interface User {
   email: string;
   role: 'admin' | 'client';

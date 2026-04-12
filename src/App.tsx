@@ -31,9 +31,10 @@ import {
   QrCode,
   Copy,
   Terminal,
-  Play
+  Play,
+  RefreshCw
 } from 'lucide-react';
-import { cn, User, Raffle, RaffleNumber, Winner } from './types';
+import { cn, User, Raffle, RaffleNumber, Winner, isPago } from './types';
 import { auth, db } from './firebase';
 import { 
   signInWithEmailAndPassword, 
@@ -173,7 +174,7 @@ const Home = ({ setShowConsult }: { setShowConsult: (show: boolean) => void }) =
       setLoading(false);
       setError(null);
     }, (err: any) => {
-      console.error("Error fetching raffles:", err.message || err);
+      console.error("Error fetching raffles:", err.message || String(err));
       if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
         setError("Limite de acesso ao banco de dados atingido. Por favor, tente novamente amanhã.");
       } else if (err.code === 'permission-denied') {
@@ -337,7 +338,7 @@ const RaffleDetails = () => {
         setRaffle({ id: docSnap.id, ...docSnap.data() } as any);
       }
     }, (error) => {
-      console.error("Error fetching raffle details:", error.message || error);
+      console.error("Error fetching raffle details:", error.message || String(error));
       setLoading(false);
     });
 
@@ -346,7 +347,7 @@ const RaffleDetails = () => {
       setNumbers(nums.sort((a, b) => a.number - b.number));
       
       const total = nums.length;
-      const paid = nums.filter(n => n.status === 'pago' || n.status === 'confirmed').length;
+      const paid = nums.filter(n => isPago(n.status) || n.status === 'confirmed').length;
       console.log(`Rifa ${raffleId}: ${paid} números pagos de ${total}`);
       setStats({ total, sold: paid, available: total - paid });
       setLoading(false);
@@ -387,13 +388,13 @@ const RaffleDetails = () => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         console.log("Status da compra atualizado:", data.status);
-        if (data.status === 'paid' || data.status === 'pago') {
+        if (isPago(data.status)) {
           // Save to local storage when paid
           saveToLocalStorage({
             raffleId: data.rifaId,
             numbers: data.numero,
             buyer: data.nome,
-            status: 'pago',
+            status: 'paid',
             date: new Date().toISOString()
           });
           setStep(4);
@@ -496,7 +497,7 @@ const RaffleDetails = () => {
         }
       }
     } catch (err: any) {
-      console.error("Erro ao processar compra:", err.message || err);
+      console.error("Erro ao processar compra:", err.message || String(err));
       if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
         alert("Limite de transações atingido para hoje. Por favor, tente novamente mais tarde.");
       } else {
@@ -703,11 +704,11 @@ const RaffleDetails = () => {
                       {numbers.map(n => (
                         <button
                           key={n.id}
-                          disabled={n.status === 'pago' || n.status === 'confirmed'}
+                          disabled={isPago(n.status) || n.status === 'confirmed'}
                           onClick={() => toggleNumber(n.number)}
                           className={cn(
                             "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                            (n.status === 'pago' || n.status === 'confirmed') ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
+                            (isPago(n.status) || n.status === 'confirmed') ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
                             selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
                             "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
                           )}
@@ -1410,7 +1411,7 @@ const AdminDashboard = () => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setRaffles(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as any);
     }, (error) => {
-      console.error("Erro ao carregar rifas no painel admin:", error.message || error);
+      console.error("Erro ao carregar rifas no painel admin:", error.message || String(error));
     });
     return () => unsubscribe();
   }, []);
@@ -1440,7 +1441,7 @@ const AdminDashboard = () => {
         totalSold
       });
     }, (error) => {
-      console.error("Erro ao carregar estatísticas do painel:", error.message || error);
+      console.error("Erro ao carregar estatísticas do painel:", error.message || String(error));
     });
     
     return () => unsubscribe();
@@ -1531,6 +1532,40 @@ const AdminDashboard = () => {
         console.error("Erro ao liberar sorteio:", err.message || String(err));
         alert("Erro ao liberar sorteio.");
       }
+    }
+  };
+
+  const handleFixNumbers = async (raffle: Raffle) => {
+    if (!window.confirm(`Deseja gerar/corrigir os ${raffle.total_numbers} números desta rifa? Isso garantirá que todos os documentos existam com o ID correto (número como ID).`)) return;
+    
+    setCreating(true);
+    try {
+      const batchSize = 500;
+      const total = raffle.total_numbers;
+      
+      console.log(`Corrigindo ${total} números para a rifa ${raffle.id}...`);
+      for (let i = 0; i < total; i += batchSize) {
+        const batch = writeBatch(db);
+        const end = Math.min(i + batchSize, total);
+        for (let j = i; j < end; j++) {
+          const numRef = doc(db, "raffles", raffle.id, "numbers", j.toString());
+          batch.set(numRef, {
+            number: j,
+            status: 'available',
+            userId: null,
+            userName: null,
+            updated_at: new Date().toISOString()
+          }, { merge: true });
+        }
+        await batch.commit();
+        console.log(`Lote ${i} a ${end} corrigido.`);
+      }
+      alert("Números corrigidos com sucesso!");
+    } catch (err: any) {
+      console.error("Erro ao corrigir números:", err.message || String(err));
+      alert("Erro ao corrigir números.");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -1683,10 +1718,12 @@ const AdminDashboard = () => {
           const batch = writeBatch(db);
           const end = Math.min(i + batchSize, total);
           for (let j = i; j < end; j++) {
-            const numRef = doc(collection(db, "raffles", docRef.id, "numbers"));
+            const numRef = doc(db, "raffles", docRef.id, "numbers", j.toString());
             batch.set(numRef, {
               number: j,
               status: 'available',
+              userId: null,
+              userName: null,
               updated_at: new Date().toISOString()
             });
           }
@@ -1894,6 +1931,7 @@ const AdminDashboard = () => {
                         {!isGoalMet(raffle, raffleStats) && (
                           <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
                         )}
+                        <button onClick={() => handleFixNumbers(raffle)} className="p-2 text-blue-400 hover:text-blue-600 transition-colors" title="Corrigir Números"><RefreshCw className="w-4 h-4" /></button>
                         <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
@@ -2734,14 +2772,14 @@ export default function App() {
                                 </div>
                                 <div className="text-right">
                                   <span className={`px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1 ${
-                                    purchase.status === 'pago' || purchase.status === 'paid' 
+                                    isPago(purchase.status)
                                       ? 'bg-emerald-100 text-emerald-700' 
                                       : 'bg-amber-100 text-amber-700'
                                   }`}>
-                                    {purchase.status === 'pago' || purchase.status === 'paid' ? 'PAGO' : 'AGUARDANDO'}
+                                    {isPago(purchase.status) ? 'PAGO' : 'AGUARDANDO'}
                                   </span>
                                   <p className="text-[10px] font-bold text-slate-400">{purchase.numbers.length} números</p>
-                                  {(purchase.status === 'pago' || purchase.status === 'paid') && (
+                                  {isPago(purchase.status) && (
                                     <button 
                                       onClick={() => {
                                         navigator.clipboard.writeText(purchase.numbers.join(', '));

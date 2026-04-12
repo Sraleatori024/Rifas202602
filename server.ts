@@ -24,6 +24,11 @@ const normalizeCPF = (cpf: string) => {
   return clean;
 };
 
+const isPago = (status: string | undefined): boolean => {
+  if (!status) return false;
+  return ["paid", "pago"].includes(status.toLowerCase());
+};
+
 // 1) Criar função para gerar token automaticamente
 async function generateToken() {
   const clientId = process.env.PIX_API_CLIENT_ID || process.env.SYNC_CLIENT_ID;
@@ -47,7 +52,7 @@ async function generateToken() {
     const data = await response.json();
     
     if (!response.ok || !data.access_token) {
-      console.error("Erro ao gerar token:", data.message || data);
+      console.error("Erro ao gerar token:", data.message || String(data));
       throw new Error(data.message || "Falha na autenticação");
     }
 
@@ -283,7 +288,7 @@ async function startServer() {
       res.json(responseData);
 
     } catch (error: any) {
-      console.error("Erro ao criar pagamento:", error.message || error);
+      console.error("Erro ao criar pagamento:", error.message || String(error));
       res.status(500).json({ 
         success: false, 
         code: "ERRO_INTERNO",
@@ -353,7 +358,7 @@ async function startServer() {
       }
 
       const purchaseData = paymentSnap.data();
-      if (purchaseData.status === "paid") {
+      if (isPago(purchaseData.status)) {
         return res.json({ 
           success: true, 
           message: "Pagamento já confirmado! Boa sorte 🍀" 
@@ -366,21 +371,16 @@ async function startServer() {
       const numbersRef = raffleRef.collection("numbers");
 
       const numbersToConfirm = Array.isArray(numero) ? numero : [numero];
-      const numbersChunks = [];
-      for (let i = 0; i < numbersToConfirm.length; i += 30) {
-        numbersChunks.push(numbersToConfirm.slice(i, i + 30));
-      }
-
-      for (const chunk of numbersChunks) {
-        const selectedNumbersSnap = await numbersRef.where("number", "in", chunk).get();
-        for (const doc of selectedNumbersSnap.docs) {
-          batch.update(doc.ref, {
-            status: 'pago',
-            buyer_name: nome,
-            buyer_whatsapp: telefone,
-            updated_at: admin.firestore.FieldValue.serverTimestamp()
-          });
-        }
+      
+      for (const num of numbersToConfirm) {
+        const numDocRef = numbersRef.doc(num.toString());
+        batch.set(numDocRef, {
+          number: Number(num),
+          status: 'pago',
+          userName: nome,
+          userId: telefone,
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
       }
 
       batch.update(raffleRef, {
@@ -412,7 +412,7 @@ async function startServer() {
       res.json({ success: true, message: "Pagamento confirmado! Boa sorte 🍀" });
 
     } catch (error: any) {
-      console.error("[Webhook Error]:", error.message || error);
+      console.error("[Webhook Error]:", error.message || String(error));
       res.status(500).json({ error: "Erro ao processar webhook.", details: error.message });
     }
   });
@@ -489,8 +489,8 @@ async function startServer() {
               confirmedNumbersByRaffle[rifaId].numbers = [...currentNumbers, ...newNumbers].sort((a, b) => a - b);
               
               // Se qualquer compra daquela rifa estiver paga, marca como paga
-              if (data.status === "paid" || data.status === "pago") {
-                confirmedNumbersByRaffle[rifaId].status = "pago";
+              if (isPago(data.status)) {
+                confirmedNumbersByRaffle[rifaId].status = "paid";
               }
             }
           }
@@ -504,7 +504,7 @@ async function startServer() {
         name: name
       });
     } catch (error: any) {
-      console.error("Erro ao consultar números:", error.message || error);
+      console.error("Erro ao consultar números:", error.message || String(error));
       res.status(500).json({ success: false, message: "Erro ao consultar números", details: error.message });
     }
   });
