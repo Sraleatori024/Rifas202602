@@ -29,7 +29,9 @@ import {
   ArrowRight,
   Search,
   QrCode,
-  Copy
+  Copy,
+  Terminal,
+  Play
 } from 'lucide-react';
 import { cn, User, Raffle, RaffleNumber, Winner } from './types';
 import { auth, db } from './firebase';
@@ -349,7 +351,7 @@ const RaffleDetails = () => {
       setStats({ total, sold: paid, available: total - paid });
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching numbers:", error.message || error);
+      console.error("Error fetching numbers:", error.message || String(error));
       setLoading(false);
     });
 
@@ -373,8 +375,8 @@ const RaffleDetails = () => {
         date: String(item.date || '')
       }));
       localStorage.setItem('minhas_rifas', JSON.stringify(safeData));
-    } catch (e) {
-      console.error("Erro ao salvar no localStorage:", e);
+    } catch (e: any) {
+      console.error("Erro ao salvar no localStorage:", e.message || String(e));
     }
   };
 
@@ -1253,6 +1255,102 @@ const DrawAnimation = ({
   );
 };
 
+const WebhookTester = () => {
+  const [purchaseId, setPurchaseId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+
+  const testWebhook = async () => {
+    if (!purchaseId) {
+      alert("Por favor, digite o ID da compra.");
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+    console.log("Iniciando teste de webhook para ID:", purchaseId);
+
+    try {
+      const response = await fetch('/api/webhook-syncpay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: 'paid',
+          external_id: purchaseId
+        })
+      });
+
+      const data = await response.json();
+      console.log("Resposta do Webhook:", data);
+      setResult(data);
+    } catch (error: any) {
+      console.error("Erro ao testar webhook:", error.message || String(error));
+      setResult({ error: error.message || "Erro de conexão" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="card p-8 space-y-6">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
+          <Terminal className="w-5 h-5" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">Simulador de Pagamento (Webhook)</h3>
+          <p className="text-sm text-slate-500">Use esta ferramenta para simular a confirmação de um pagamento via PIX.</p>
+        </div>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+        <p className="text-xs text-amber-800 leading-relaxed">
+          <strong>Atenção:</strong> Esta ferramenta envia uma requisição real para o seu endpoint de webhook. 
+          Se o ID da compra for válido, os números serão marcados como <strong>pagos</strong> no banco de dados.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-bold text-slate-700 mb-1">ID da Compra (external_id)</label>
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              value={purchaseId}
+              onChange={e => setPurchaseId(e.target.value)}
+              placeholder="Ex: compra_abc123"
+              className="flex-1 px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono text-sm"
+            />
+            <button 
+              onClick={testWebhook}
+              disabled={loading}
+              className={cn(
+                "btn-primary px-6 flex items-center gap-2",
+                loading && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Play className="w-4 h-4" />}
+              Simular Pagamento
+            </button>
+          </div>
+        </div>
+
+        {result && (
+          <div className="mt-6 space-y-2">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Resultado da Requisição:</p>
+            <pre className="p-4 bg-slate-900 text-emerald-400 rounded-2xl text-xs overflow-x-auto font-mono border border-slate-800 shadow-inner">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -1299,7 +1397,7 @@ const AdminDashboard = () => {
   });
 
   const [compras, setCompras] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'raffles' | 'customers'>('raffles');
+  const [activeTab, setActiveTab] = useState<'raffles' | 'customers' | 'debug'>('raffles');
   const [globalStats, setGlobalStats] = useState({
     totalRevenue: 0,
     activeCustomers: 0,
@@ -1415,8 +1513,8 @@ const AdminDashboard = () => {
         // Note: In a real app, you'd also delete the subcollection 'numbers'
         // but Firestore doesn't support recursive delete from client SDK easily.
         // For this demo, deleting the main doc is enough to hide it.
-      } catch (err) {
-        console.error(err);
+      } catch (err: any) {
+        console.error("Erro ao excluir rifa:", err.message || String(err));
         alert("Erro ao excluir rifa.");
       }
     }
@@ -1429,8 +1527,8 @@ const AdminDashboard = () => {
           draw_manually_released: true,
           updated_at: new Date().toISOString()
         });
-      } catch (err) {
-        console.error(err);
+      } catch (err: any) {
+        console.error("Erro ao liberar sorteio:", err.message || String(err));
         alert("Erro ao liberar sorteio.");
       }
     }
@@ -1458,8 +1556,8 @@ const AdminDashboard = () => {
           status: 'ended',
           updated_at: new Date().toISOString()
         });
-      } catch (err) {
-        console.error(err);
+      } catch (err: any) {
+        console.error("Erro ao encerrar rifa:", err.message || String(err));
         alert("Erro ao encerrar rifa.");
       }
     }
@@ -1474,8 +1572,8 @@ const AdminDashboard = () => {
           indeterminate_date: false,
           updated_at: new Date().toISOString()
         });
-      } catch (err) {
-        console.error(err);
+      } catch (err: any) {
+        console.error("Erro ao estender rifa:", err.message || String(err));
         alert("Erro ao estender rifa.");
       }
     }
@@ -1661,6 +1759,15 @@ const AdminDashboard = () => {
             >
               Clientes
             </button>
+            <button 
+              onClick={() => setActiveTab('debug')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-bold transition-all",
+                activeTab === 'debug' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              Testar Webhook
+            </button>
           </div>
           <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
             <Plus className="w-5 h-5" />
@@ -1710,93 +1817,93 @@ const AdminDashboard = () => {
 
       {activeTab === 'raffles' ? (
         <div className="card overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Rifa</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vendas</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Arrecadação</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Clientes</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {raffles.map(raffle => {
-              const raffleStats = getRaffleStats(raffle.id);
-              return (
-                <tr key={raffle.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <img 
-                        src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} 
-                        className="w-10 h-10 rounded-lg object-cover" 
-                        referrerPolicy="no-referrer"
-                      />
-                      <div>
-                        <p className="font-bold text-slate-900">{raffle.name}</p>
-                        <p className="text-xs text-slate-500">{raffle.total_numbers} números</p>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Rifa</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vendas</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Arrecadação</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Clientes</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {raffles.map(raffle => {
+                const raffleStats = getRaffleStats(raffle.id);
+                return (
+                  <tr key={raffle.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <img 
+                          src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} 
+                          className="w-10 h-10 rounded-lg object-cover" 
+                          referrerPolicy="no-referrer"
+                        />
+                        <div>
+                          <p className="font-bold text-slate-900">{raffle.name}</p>
+                          <p className="text-xs text-slate-500">{raffle.total_numbers} números</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="font-bold text-slate-900">{raffleStats.soldNumbers}</span>
-                      <span className="text-[10px] text-slate-400 uppercase">Números vendidos</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="font-bold text-primary">R$ {raffleStats.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                      <span className="text-[10px] text-slate-400 uppercase">Total arrecadado</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="font-bold text-slate-700">{raffleStats.uniqueCustomers}</span>
-                      <span className="text-[10px] text-slate-400 uppercase">Clientes únicos</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={cn(
-                      "px-2 py-1 rounded-full text-xs font-bold",
-                      raffle.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-                    )}>
-                      {raffle.active ? 'Ativa' : 'Inativa'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Editar"><Settings className="w-4 h-4" /></button>
-                      <button 
-                        onClick={() => handleDraw(raffle)} 
-                        className={cn(
-                          "p-2 transition-colors",
-                          isGoalMet(raffle, raffleStats) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-900">{raffleStats.soldNumbers}</span>
+                        <span className="text-[10px] text-slate-400 uppercase">Números vendidos</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-primary">R$ {raffleStats.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        <span className="text-[10px] text-slate-400 uppercase">Total arrecadado</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-700">{raffleStats.uniqueCustomers}</span>
+                        <span className="text-[10px] text-slate-400 uppercase">Clientes únicos</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={cn(
+                        "px-2 py-1 rounded-full text-xs font-bold",
+                        raffle.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                      )}>
+                        {raffle.active ? 'Ativa' : 'Inativa'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Editar"><Settings className="w-4 h-4" /></button>
+                        <button 
+                          onClick={() => handleDraw(raffle)} 
+                          className={cn(
+                            "p-2 transition-colors",
+                            isGoalMet(raffle, raffleStats) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
+                          )}
+                          title={isGoalMet(raffle, raffleStats) ? "Sortear" : "Meta não atingida"}
+                        >
+                          <Trophy className="w-4 h-4" />
+                        </button>
+                        {raffle.status === 'active' && (
+                          <button onClick={() => handleEndRaffle(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Encerrar"><X className="w-4 h-4" /></button>
                         )}
-                        title={isGoalMet(raffle, raffleStats) ? "Sortear" : "Meta não atingida"}
-                      >
-                        <Trophy className="w-4 h-4" />
-                      </button>
-                      {raffle.status === 'active' && (
-                        <button onClick={() => handleEndRaffle(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Encerrar"><X className="w-4 h-4" /></button>
-                      )}
-                      {raffle.status === 'ended' && (
-                        <button onClick={() => handleExtendRaffle(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Estender"><Clock className="w-4 h-4" /></button>
-                      )}
-                      {!isGoalMet(raffle, raffleStats) && (
-                        <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
-                      )}
-                      <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      ) : (
+                        {raffle.status === 'ended' && (
+                          <button onClick={() => handleExtendRaffle(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Estender"><Clock className="w-4 h-4" /></button>
+                        )}
+                        {!isGoalMet(raffle, raffleStats) && (
+                          <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
+                        )}
+                        <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : activeTab === 'customers' ? (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
@@ -1846,6 +1953,8 @@ const AdminDashboard = () => {
             </table>
           </div>
         </div>
+      ) : (
+        <WebhookTester />
       )}
 
       {drawState.active && drawState.raffle && (
@@ -2617,16 +2726,37 @@ export default function App() {
                           </div>
                         ) : (
                           consultResult.purchases.map((purchase: any, pIdx: number) => (
-                            <div key={pIdx} className="space-y-4 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                            <div key={pIdx} className="space-y-4 p-5 bg-white rounded-3xl border border-slate-100 shadow-sm">
                               <div className="flex items-center justify-between px-1">
-                                <p className="text-xs font-black text-slate-900 uppercase tracking-widest">{purchase.raffleName}</p>
-                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-lg">
-                                  {purchase.numbers.length} números
-                                </span>
+                                <div>
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Rifa</p>
+                                  <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{purchase.raffleName}</p>
+                                </div>
+                                <div className="text-right">
+                                  <span className={`px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1 ${
+                                    purchase.status === 'pago' || purchase.status === 'paid' 
+                                      ? 'bg-emerald-100 text-emerald-700' 
+                                      : 'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    {purchase.status === 'pago' || purchase.status === 'paid' ? 'PAGO' : 'AGUARDANDO'}
+                                  </span>
+                                  <p className="text-[10px] font-bold text-slate-400">{purchase.numbers.length} números</p>
+                                  {(purchase.status === 'pago' || purchase.status === 'paid') && (
+                                    <button 
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(purchase.numbers.join(', '));
+                                        alert("Números copiados!");
+                                      }}
+                                      className="block text-[10px] font-black text-primary hover:underline uppercase tracking-widest mt-1"
+                                    >
+                                      Copiar Tudo
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                                {purchase.numbers.sort((a: number, b: number) => a - b).map((n: number) => (
-                                  <div key={n} className="aspect-square flex items-center justify-center bg-white text-emerald-600 text-sm font-black rounded-xl border border-emerald-100 shadow-sm">
+                              <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 pt-2 border-t border-slate-50">
+                                {purchase.numbers.map((n: number) => (
+                                  <div key={n} className="aspect-square flex items-center justify-center bg-emerald-50 text-emerald-700 text-xs font-black rounded-xl border border-emerald-100 shadow-sm hover:bg-emerald-100 transition-colors">
                                     {n.toString().padStart(2, '0')}
                                   </div>
                                 ))}

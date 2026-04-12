@@ -38,7 +38,7 @@ async function generateToken() {
     const data = await response.json();
     
     if (!response.ok || !data.access_token) {
-      console.error("Erro ao gerar token SyncPayments:", data);
+      console.error("Erro ao gerar token SyncPayments:", data.message || String(data));
       throw new Error(data.message || `Falha na autenticação SyncPayments: ${response.status}`);
     }
 

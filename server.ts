@@ -298,8 +298,8 @@ async function startServer() {
     console.log("Webhook completo:", req.body);
     const data = req.body;
     const status = data?.status || data?.data?.status || data?.payment?.status;
-    const external_id = data?.external_id || data?.data?.external_id;
-    const id = data?.id || data?.data?.id;
+    const external_id = data?.external_id || data?.data?.external_id || data?.payment?.external_id;
+    const id = data?.id || data?.data?.id || data?.payment?.id;
     const paymentId = external_id || id;
     const normalizedStatus = String(status || "").toLowerCase().trim();
     const isSuccess = ["paid", "approved", "completed", "sucesso", "pago"].includes(normalizedStatus);
@@ -318,7 +318,18 @@ async function startServer() {
       let paymentSnap = null;
       let paymentRef = null;
 
-      if (id) {
+      // 1. Tenta buscar pelo external_id como ID do documento (que é como salvamos no create-payment)
+      if (external_id) {
+        const ref = getDb().collection("compras").doc(String(external_id));
+        const snap = await ref.get();
+        if (snap.exists) {
+          paymentSnap = snap;
+          paymentRef = ref;
+        }
+      }
+
+      // 2. Tenta buscar pelo id (SyncPay ID) como ID do documento (caso tenha sido salvo assim)
+      if (!paymentSnap && id) {
         const ref = getDb().collection("compras").doc(String(id));
         const snap = await ref.get();
         if (snap.exists) {
@@ -327,8 +338,9 @@ async function startServer() {
         }
       }
 
-      if (!paymentSnap && external_id) {
-        const q = await getDb().collection("compras").where("identifier", "==", String(external_id)).limit(1).get();
+      // 3. Tenta buscar pelo campo 'identifier'
+      if (!paymentSnap && paymentId) {
+        const q = await getDb().collection("compras").where("identifier", "==", String(paymentId)).limit(1).get();
         if (!q.empty) {
           paymentSnap = q.docs[0];
           paymentRef = paymentSnap.ref;
@@ -433,19 +445,21 @@ async function startServer() {
         // Busca pelo telefone normalizado e também tenta com prefixo 55 caso tenha sido salvo assim
         const q1 = db.collection("compras").where("telefone", "==", phone).get();
         const q2 = db.collection("compras").where("telefone", "==", "55" + phone).get();
-        snapshots = await Promise.all([q1, q2]);
+        const q3 = db.collection("compras").where("telefone", "==", whatsapp).get(); // Tenta original também
+        snapshots = await Promise.all([q1, q2, q3]);
       } else if (cleanCpf) {
         snapshots = [await db.collection("compras").where("cpf", "==", cleanCpf).get()];
       }
+
+      console.log(`[Consultar] Snapshots encontrados: ${snapshots.length}, Total docs: ${snapshots.reduce((acc, s) => acc + s.size, 0)}`);
 
       if (snapshots.every(s => s.empty)) {
         return res.json({ success: false, message: "Nenhuma compra encontrada" });
       }
 
-      let confirmedNumbers: any[] = [];
+      let confirmedNumbersByRaffle: Record<string, { raffleName: string, numbers: number[], status: string }> = {};
       let name = "";
       const processedDocs = new Set<string>();
-      const raffleNames: Record<string, string> = {};
 
       for (const snapshot of snapshots) {
         for (const doc of snapshot.docs) {
@@ -454,19 +468,30 @@ async function startServer() {
 
           const data = doc.data();
           if (data.numero && Array.isArray(data.numero)) {
-            if (data.status === "paid" || data.status === "pago") {
-              const rifaId = data.rifaId;
-              if (rifaId && !raffleNames[rifaId]) {
+            const rifaId = data.rifaId;
+            if (rifaId) {
+              if (!confirmedNumbersByRaffle[rifaId]) {
+                let raffleName = "Rifa";
                 const rSnap = await db.collection("raffles").doc(rifaId).get();
                 if (rSnap.exists) {
-                  raffleNames[rifaId] = rSnap.data()?.name || "Rifa";
+                  raffleName = rSnap.data()?.name || "Rifa";
                 }
+                confirmedNumbersByRaffle[rifaId] = {
+                  raffleName,
+                  numbers: [],
+                  status: data.status || 'criada'
+                };
               }
               
-              confirmedNumbers.push({
-                raffleName: raffleNames[rifaId] || "Rifa",
-                numbers: data.numero
-              });
+              // Adiciona os números e remove duplicatas
+              const currentNumbers = confirmedNumbersByRaffle[rifaId].numbers;
+              const newNumbers = data.numero.filter((n: number) => !currentNumbers.includes(n));
+              confirmedNumbersByRaffle[rifaId].numbers = [...currentNumbers, ...newNumbers].sort((a, b) => a - b);
+              
+              // Se qualquer compra daquela rifa estiver paga, marca como paga
+              if (data.status === "paid" || data.status === "pago") {
+                confirmedNumbersByRaffle[rifaId].status = "pago";
+              }
             }
           }
           if (!name && data.nome) name = data.nome;
@@ -475,7 +500,7 @@ async function startServer() {
 
       res.json({
         success: true,
-        purchases: confirmedNumbers,
+        purchases: Object.values(confirmedNumbersByRaffle),
         name: name
       });
     } catch (error: any) {
