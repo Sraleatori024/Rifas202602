@@ -376,7 +376,7 @@ async function startServer() {
         const numDocRef = numbersRef.doc(num.toString());
         batch.set(numDocRef, {
           number: Number(num),
-          status: 'pago',
+          status: 'paid',
           userName: nome,
           userId: telefone,
           updated_at: admin.firestore.FieldValue.serverTimestamp()
@@ -498,9 +498,15 @@ async function startServer() {
         }
       }
 
+      const paidPurchases = Object.values(confirmedNumbersByRaffle).filter(p => isPago(p.status));
+
+      if (paidPurchases.length === 0) {
+        return res.json({ success: false, message: "Nenhuma compra paga encontrada" });
+      }
+
       res.json({
         success: true,
-        purchases: Object.values(confirmedNumbersByRaffle),
+        purchases: paidPurchases,
         name: name
       });
     } catch (error: any) {

@@ -704,11 +704,11 @@ const RaffleDetails = () => {
                       {numbers.map(n => (
                         <button
                           key={n.id}
-                          disabled={isPago(n.status) || n.status === 'confirmed'}
+                          disabled={isPago(n.status)}
                           onClick={() => toggleNumber(n.number)}
                           className={cn(
                             "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                            (isPago(n.status) || n.status === 'confirmed') ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
+                            isPago(n.status) ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
                             selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
                             "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
                           )}
@@ -839,7 +839,7 @@ const RaffleDetails = () => {
                   <div className="absolute inset-0 w-3 h-3 bg-emerald-500 rounded-full" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-black text-emerald-900 uppercase tracking-wider text-[10px]">Status: Aguardando Pagamento</p>
+                  <p className="font-black text-emerald-900 uppercase tracking-wider text-[10px]">Status: Verificando Pagamento</p>
                   <p className="leading-tight opacity-80">Não feche esta página. Seus números serão confirmados automaticamente em segundos após o pagamento ser detectado.</p>
                 </div>
               </div>
@@ -871,8 +871,8 @@ const RaffleDetails = () => {
                   <CheckCircle2 className="w-14 h-14" />
                 </motion.div>
                 
-                <h3 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tight">Pagamento concluído! 🎉</h3>
-                <p className="text-xl text-slate-600 mb-8 font-medium">Seus números foram registrados. Boa sorte! 🍀</p>
+                <h3 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tight">Pagamento confirmado! 🍀</h3>
+                <p className="text-xl text-slate-600 mb-8 font-medium">Boa sorte! Seus números já estão garantidos.</p>
                 
                 <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-8">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números Pagos</p>
@@ -1256,9 +1256,10 @@ const DrawAnimation = ({
   );
 };
 
-const WebhookTester = () => {
+const DebugPanel = () => {
   const [purchaseId, setPurchaseId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [migrating, setMigrating] = useState(false);
   const [result, setResult] = useState<any>(null);
 
   const testWebhook = async () => {
@@ -1266,25 +1267,15 @@ const WebhookTester = () => {
       alert("Por favor, digite o ID da compra.");
       return;
     }
-
     setLoading(true);
     setResult(null);
-    console.log("Iniciando teste de webhook para ID:", purchaseId);
-
     try {
       const response = await fetch('/api/webhook-syncpay', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          status: 'paid',
-          external_id: purchaseId
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'paid', external_id: purchaseId })
       });
-
       const data = await response.json();
-      console.log("Resposta do Webhook:", data);
       setResult(data);
     } catch (error: any) {
       console.error("Erro ao testar webhook:", error.message || String(error));
@@ -1294,59 +1285,97 @@ const WebhookTester = () => {
     }
   };
 
+  const runMigration = async () => {
+    if (!confirm("Isso irá atualizar todos os números que possuem comprador mas estão com status diferente de 'paid'. Deseja continuar?")) return;
+    setMigrating(true);
+    try {
+      const rafflesSnap = await getDocs(collection(db, "raffles"));
+      let totalFixed = 0;
+      for (const raffleDoc of rafflesSnap.docs) {
+        const numbersSnap = await getDocs(collection(db, "raffles", raffleDoc.id, "numbers"));
+        const batch = writeBatch(db);
+        let batchCount = 0;
+        for (const numDoc of numbersSnap.docs) {
+          const data = numDoc.data();
+          if (!isPago(data.status) && (data.userId || data.userName)) {
+            batch.update(numDoc.ref, { status: 'paid' });
+            batchCount++;
+            totalFixed++;
+          }
+        }
+        if (batchCount > 0) await batch.commit();
+      }
+      alert(`Migração concluída! ${totalFixed} números foram corrigidos.`);
+    } catch (err: any) {
+      console.error("Erro na migração:", err.message || String(err));
+      alert("Erro ao executar migração.");
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   return (
-    <div className="card p-8 space-y-6">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
-          <Terminal className="w-5 h-5" />
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">Simulador de Pagamento (Webhook)</h3>
-          <p className="text-sm text-slate-500">Use esta ferramenta para simular a confirmação de um pagamento via PIX.</p>
-        </div>
-      </div>
-
-      <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-        <p className="text-xs text-amber-800 leading-relaxed">
-          <strong>Atenção:</strong> Esta ferramenta envia uma requisição real para o seu endpoint de webhook. 
-          Se o ID da compra for válido, os números serão marcados como <strong>pagos</strong> no banco de dados.
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1">ID da Compra (external_id)</label>
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              value={purchaseId}
-              onChange={e => setPurchaseId(e.target.value)}
-              placeholder="Ex: compra_abc123"
-              className="flex-1 px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono text-sm"
-            />
-            <button 
-              onClick={testWebhook}
-              disabled={loading}
-              className={cn(
-                "btn-primary px-6 flex items-center gap-2",
-                loading && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Play className="w-4 h-4" />}
-              Simular Pagamento
-            </button>
+    <div className="space-y-6">
+      <div className="card p-8 space-y-6">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
+            <Terminal className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Simulador de Pagamento (Webhook)</h3>
+            <p className="text-sm text-slate-500">Simule a confirmação de um pagamento via PIX.</p>
           </div>
         </div>
-
-        {result && (
-          <div className="mt-6 space-y-2">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Resultado da Requisição:</p>
-            <pre className="p-4 bg-slate-900 text-emerald-400 rounded-2xl text-xs overflow-x-auto font-mono border border-slate-800 shadow-inner">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">ID da Compra (external_id)</label>
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                value={purchaseId}
+                onChange={e => setPurchaseId(e.target.value)}
+                placeholder="Ex: compra_abc123"
+                className="flex-1 px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono text-sm"
+              />
+              <button 
+                onClick={testWebhook}
+                disabled={loading}
+                className={cn("btn-primary px-6 flex items-center gap-2", loading && "opacity-50 cursor-not-allowed")}
+              >
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                Simular Pagamento
+              </button>
+            </div>
+          </div>
+          {result && (
+            <pre className="p-4 bg-slate-900 text-emerald-400 rounded-2xl text-xs overflow-x-auto font-mono border border-slate-800">
               {JSON.stringify(result, null, 2)}
             </pre>
+          )}
+        </div>
+      </div>
+
+      <div className="card p-8 border-2 border-dashed border-primary/20 bg-primary/5">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
+            <RefreshCw className="w-5 h-5" />
           </div>
-        )}
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Migração e Limpeza de Dados</h3>
+            <p className="text-sm text-slate-500">Corrige números antigos com status inconsistentes.</p>
+          </div>
+        </div>
+        <button 
+          onClick={runMigration}
+          disabled={migrating}
+          className={cn(
+            "w-full py-4 rounded-2xl font-black uppercase tracking-widest text-sm transition-all flex items-center justify-center gap-3",
+            migrating ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-primary text-white hover:bg-primary/90 shadow-lg shadow-primary/20"
+          )}
+        >
+          {migrating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Terminal className="w-5 h-5" />}
+          Executar Migração de Status
+        </button>
       </div>
     </div>
   );
@@ -1992,7 +2021,7 @@ const AdminDashboard = () => {
           </div>
         </div>
       ) : (
-        <WebhookTester />
+        <DebugPanel />
       )}
 
       {drawState.active && drawState.raffle && (
@@ -2771,25 +2800,19 @@ export default function App() {
                                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{purchase.raffleName}</p>
                                 </div>
                                 <div className="text-right">
-                                  <span className={`px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1 ${
-                                    isPago(purchase.status)
-                                      ? 'bg-emerald-100 text-emerald-700' 
-                                      : 'bg-amber-100 text-amber-700'
-                                  }`}>
-                                    {isPago(purchase.status) ? 'PAGO' : 'AGUARDANDO'}
+                                  <span className="px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1 bg-emerald-100 text-emerald-700">
+                                    PAGO
                                   </span>
                                   <p className="text-[10px] font-bold text-slate-400">{purchase.numbers.length} números</p>
-                                  {isPago(purchase.status) && (
-                                    <button 
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(purchase.numbers.join(', '));
-                                        alert("Números copiados!");
-                                      }}
-                                      className="block text-[10px] font-black text-primary hover:underline uppercase tracking-widest mt-1"
-                                    >
-                                      Copiar Tudo
-                                    </button>
-                                  )}
+                                  <button 
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(purchase.numbers.join(', '));
+                                      alert("Números copiados!");
+                                    }}
+                                    className="block text-[10px] font-black text-primary hover:underline uppercase tracking-widest mt-1"
+                                  >
+                                    Copiar Tudo
+                                  </button>
                                 </div>
                               </div>
                               <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 pt-2 border-t border-slate-50">
