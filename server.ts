@@ -144,16 +144,27 @@ async function startServer() {
 
   // Create Payment (SyncPay PIX)
   app.post("/api/create-payment", async (req, res) => {
-    console.log("DEBUG: Recebido em /api/create-payment:", JSON.stringify(req.body, null, 2));
+    console.log("--------------------------------------------------");
+    console.log("BACKEND: Requisição recebida em /api/create-payment");
+    console.log("BODY:", JSON.stringify(req.body, null, 2));
     
-    const { raffleId, buyer } = req.body;
+    // Suporte tanto a estrutura aninhada quanto a plana
+    const raffleId = req.body.rifaId || req.body.raffleId;
+    const buyer = req.body.buyer || {
+      name: req.body.nome || req.body.name,
+      whatsapp: req.body.telefone || req.body.whatsapp || req.body.phone,
+      cpf: req.body.cpf,
+      instagram: req.body.instagram
+    };
     
-    // Suporte a nomes de campos em português e inglês para compatibilidade
-    const requestedNumbers = req.body.numbers || req.body.numero;
-    const pkgInfo = req.body.packageId || req.body.pacote;
+    const requestedNumbers = req.body.numero || req.body.numbers;
+    const pkgInfo = req.body.pacote || req.body.packageId;
     
-    // Validação básica: precisa de Rifa, Comprador e ou Números ou Pacote
+    console.log("DADOS EXTRAÍDOS:", { raffleId, buyerName: buyer?.name, buyerPhone: buyer?.whatsapp, hasNumbers: !!requestedNumbers?.length, pkgInfo });
+
+    // Validação básica
     if (!raffleId || (!requestedNumbers?.length && !pkgInfo) || !buyer || !buyer.whatsapp || !buyer.name) {
+      console.warn("BACKEND: Dados incompletos detectados.");
       return res.status(400).json({ 
         success: false, 
         code: "DADOS_INCOMPLETOS",

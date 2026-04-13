@@ -94,17 +94,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  console.log(`[API] create-payment: Recebendo requisição para rifa ${req.body?.raffleId} do WhatsApp ${req.body?.buyer?.whatsapp}`);
+  console.log("--------------------------------------------------");
+  console.log("[API VERCEL] create-payment: Requisição recebida");
+  console.log("BODY:", JSON.stringify(req.body, null, 2));
 
   try {
     const db = getDb();
     if (!req.body) {
+      console.warn("[API VERCEL] Body vazio.");
       return res.status(400).json({ error: "Body vazio." });
     }
 
-    const { raffleId, numbers: requestedNumbers, buyer, packageId } = req.body;
+    // Suporte tanto a estrutura aninhada quanto a plana
+    const raffleId = req.body.rifaId || req.body.raffleId;
+    const buyer = req.body.buyer || {
+      name: req.body.nome || req.body.name,
+      whatsapp: req.body.telefone || req.body.whatsapp || req.body.phone,
+      cpf: req.body.cpf,
+      instagram: req.body.instagram
+    };
+    
+    const requestedNumbers = req.body.numero || req.body.numbers;
+    const packageId = req.body.pacote || req.body.packageId;
+
+    console.log("DADOS EXTRAÍDOS:", { raffleId, buyerName: buyer?.name, buyerPhone: buyer?.whatsapp, hasNumbers: !!requestedNumbers?.length, packageId });
 
     if (!raffleId || (!requestedNumbers?.length && !packageId) || !buyer || !buyer.whatsapp || !buyer.name) {
+      console.warn("[API VERCEL] Dados incompletos.");
       return res.status(400).json({ 
         success: false, 
         code: "DADOS_INCOMPLETOS",

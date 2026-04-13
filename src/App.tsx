@@ -533,26 +533,34 @@ const RaffleDetails = () => {
       return;
     }
 
+    const payload = {
+      rifaId: String(raffleId),
+      nome: String(buyerInfo.name || ''),
+      telefone: String(buyerInfo.whatsapp || ''),
+      cpf: String(buyerInfo.cpf || ''),
+      instagram: String(buyerInfo.instagram || ''),
+      numero: raffle?.type === 'manual' ? [...selectedNumbers] : [],
+      pacote: selectedPackage?.id ? String(selectedPackage.id) : undefined
+    };
+
+    console.log("FRONTEND: Enviando payload para /api/create-payment:", payload);
+
     setGeneratingPix(true);
     try {
       const res = await fetch('/api/create-payment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          raffleId: String(raffleId),
-          numbers: raffle?.type === 'manual' ? [...selectedNumbers] : [],
-          buyer: {
-            name: String(buyerInfo.name || ''),
-            whatsapp: String(buyerInfo.whatsapp || ''),
-            instagram: String(buyerInfo.instagram || ''),
-            cpf: String(buyerInfo.cpf || '')
-          },
-          packageId: selectedPackage?.id ? String(selectedPackage.id) : undefined
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
       });
+
+      console.log("FRONTEND: Resposta do servidor (status):", res.status);
 
       if (res.ok) {
         const data = await res.json();
+        console.log("FRONTEND: Dados recebidos:", data);
         setPurchaseId(data.identifier);
         setPixData({
           qrcode: data.qr_code,
@@ -561,10 +569,12 @@ const RaffleDetails = () => {
         setStep(3);
       } else {
         const error = await res.json();
+        console.error("FRONTEND: Erro retornado pelo servidor:", error);
         alert(error.message || "Erro ao processar compra.");
       }
     } catch (err: any) {
-      alert("Erro ao processar compra.");
+      console.error("FRONTEND: Erro crítico na requisição:", err.message || String(err));
+      alert("Erro ao conectar com o servidor. Verifique sua conexão.");
     } finally {
       setGeneratingPix(false);
     }
