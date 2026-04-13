@@ -97,6 +97,38 @@ async function createCashIn(token: string, payload: any) {
   }
 }
 
+// --- HELPER FUNCTIONS ---
+
+const generateUniqueNumbers = async (raffleId: string, quantity: number, maxNumbers: number) => {
+  const db = getDb();
+  const numbersRef = db.collection("raffles").doc(raffleId).collection("numbers");
+  const generated = new Set<number>();
+  
+  while (generated.size < quantity) {
+    const num = Math.floor(Math.random() * maxNumbers) + 1;
+    if (!generated.has(num)) {
+      const doc = await numbersRef.doc(String(num)).get();
+      if (!doc.exists) {
+        generated.add(num);
+      }
+    }
+  }
+  return Array.from(generated);
+};
+
+const calculateRouletteResult = (prizes: any[]) => {
+  const totalChance = prizes.reduce((acc, p) => acc + (p.chance || 0), 0);
+  let random = Math.random() * totalChance;
+  
+  for (const prize of prizes) {
+    if (random < (prize.chance || 0)) {
+      return prize;
+    }
+    random -= (prize.chance || 0);
+  }
+  return prizes[0];
+};
+
 async function startServer() {
   const app = express();
   app.use(express.json());
@@ -122,27 +154,8 @@ async function startServer() {
       });
     }
 
-    const normalizedPhoneVal = normalizePhone(buyer.whatsapp);
-    if (normalizedPhoneVal.length < 10 || normalizedPhoneVal.length > 11) {
-      return res.status(400).json({
-        success: false,
-        code: "TELEFONE_INVALIDO",
-        message: "Número de telefone inválido. Use o formato (DDD) 99999-9999"
-      });
-    }
-
-    const normalizedCPFVal = normalizeCPF(buyer.cpf);
-    if (buyer.cpf && normalizedCPFVal.length !== 11) {
-      return res.status(400).json({
-        success: false,
-        code: "CPF_INVALIDO",
-        message: "CPF inválido. Deve conter 11 dígitos."
-      });
-    }
-
     try {
       const db = getDb();
-      // 1. Fetch Raffle Data (Single Read)
       const raffleRef = db.collection("raffles").doc(raffleId);
       const raffleSnap = await raffleRef.get();
       
@@ -154,151 +167,99 @@ async function startServer() {
       let totalAmount = 0;
       let finalNumbers: number[] = [];
       let quantityNeeded = 0;
+      let bonusNumbers = 0;
 
-      // 2. Identify Numbers and Calculate Price
+      // 1. Identify Numbers and Calculate Price
       if (packageId) {
         const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
-        if (!pkg) {
-          return res.status(400).json({ success: false, message: "Pacote não encontrado." });
-        }
+        if (!pkg) return res.status(400).json({ success: false, message: "Pacote não encontrado." });
+        
         quantityNeeded = pkg.quantity;
         totalAmount = pkg.price;
-
-        // Find available numbers (Fast query)
-        const availableSnap = await raffleRef.collection("numbers")
-          .where("status", "==", "disponivel")
-          .limit(quantityNeeded)
-          .get();
-
-        if (availableSnap.size < quantityNeeded) {
-          return res.status(400).json({ success: false, message: "Não há números disponíveis suficientes para este pacote." });
-        }
-        finalNumbers = availableSnap.docs.map(d => d.data().number);
       } else {
-        const unitPrice = raffleData.price || 0;
-        quantityNeeded = requestedNumbers.length;
-        totalAmount = quantityNeeded * unitPrice;
-        finalNumbers = requestedNumbers;
-
-        // Quick check for sold numbers (Parallel queries)
-        const chunks = [];
-        for (let i = 0; i < requestedNumbers.length; i += 30) {
-          chunks.push(requestedNumbers.slice(i, i + 30));
+        if (raffleData.type === 'automatic') {
+          return res.status(400).json({ success: false, message: "Esta rifa aceita apenas pacotes." });
         }
+        quantityNeeded = requestedNumbers.length;
+        totalAmount = quantityNeeded * (raffleData.price || 0);
+        finalNumbers = requestedNumbers;
+      }
 
-        const checkResults = await Promise.all(chunks.map(chunk => 
-          raffleRef.collection("numbers")
-            .where("number", "in", chunk)
-            .where("status", "in", ["pago", "confirmed"])
-            .limit(1)
-            .get()
-        ));
-
-        for (const snap of checkResults) {
-          if (!snap.empty) {
-            return res.status(400).json({ 
-              success: false, 
-              message: `O número ${snap.docs[0].data().number} já foi vendido.` 
-            });
+      // 2. Apply Promotions
+      if (raffleData.promotion?.active) {
+        const promo = raffleData.promotion;
+        if (quantityNeeded >= (promo.min_purchase_quantity || 0)) {
+          if (promo.type === 'discount') {
+            totalAmount = totalAmount * (1 - (promo.value / 100));
+          } else if (promo.type === 'bonus') {
+            bonusNumbers = promo.value;
           }
         }
       }
 
-      if (totalAmount <= 0) {
-        return res.status(400).json({ success: false, message: "O valor total da compra deve ser maior que zero." });
+      // 3. Validate Numbers (Manual Only)
+      if (raffleData.type === 'manual' && finalNumbers.length > 0) {
+        const checkResults = await Promise.all(finalNumbers.map(n => 
+          raffleRef.collection("numbers").doc(String(n)).get()
+        ));
+        for (const snap of checkResults) {
+          if (snap.exists && isPago(snap.data()?.status)) {
+            return res.status(400).json({ success: false, message: `O número ${snap.id} já foi vendido.` });
+          }
+        }
       }
+
+      if (totalAmount <= 0) totalAmount = 0.01; // Minimum PIX
 
       const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-      // 4. API_PAGAMENTO_ERRO
-      let accessToken;
-      try {
-        accessToken = await generateToken();
-      } catch (authError: any) {
-        return res.status(401).json({ 
-          success: false, 
-          code: "API_PAGAMENTO_ERRO",
-          message: "Erro de autenticação na API de pagamentos", 
-          details: authError.message 
-        });
-      }
-
-      // 3. Criar Pagamento na SyncPayments
+      const accessToken = await generateToken();
+      
       const rawAppUrl = process.env.APP_URL;
       const appUrl = rawAppUrl ? (rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl) : "";
+      
       const payload = {
         amount: Number(totalAmount.toFixed(2)),
-        description: `Compra de rifa: ${raffleData.name || "Sorteio"}`,
+        description: `Rifa: ${raffleData.name}`,
         webhook_url: `${appUrl}/api/webhook-syncpay`,
         external_id: String(identifier),
         client: {
           name: buyer.name,
-          cpf: normalizedCPFVal,
+          cpf: normalizeCPF(buyer.cpf),
           email: buyer.email || "cliente@exemplo.com",
           phone: normalizePhone(buyer.whatsapp)
         }
       };
 
-      console.log(`[PIX] Criando cobrança para ${identifier}. Valor: ${totalAmount}`);
-      console.log(`[PIX] Payload external_id: ${payload.external_id}`);
-
-      let syncPayResult;
-      try {
-        syncPayResult = await createCashIn(accessToken, payload);
-      } catch (apiError: any) {
-        return res.status(500).json({
-          success: false,
-          code: "PIX_GERACAO_ERRO",
-          message: apiError.message || "Erro ao gerar PIX na SyncPayments"
-        });
-      }
-
+      const syncPayResult = await createCashIn(accessToken, payload);
       const { pix_code } = syncPayResult;
-
-      if (!pix_code) {
-        return res.status(500).json({
-          success: false,
-          code: "PIX_GERACAO_ERRO",
-          message: "Código PIX não retornado pela API"
-        });
-      }
-
       const qrCodeBase64 = await QRCode.toDataURL(pix_code);
 
-      const responseData = {
-        success: true,
-        pix_code: pix_code,
-        qr_code: qrCodeBase64,
-        identifier: identifier,
-        numbers: finalNumbers,
-        valor: totalAmount,
-        cpf: normalizedCPFVal || buyer.cpf || ""
-      };
-
-      const compraRef = getDb().collection("compras").doc(identifier);
-      await compraRef.set({
+      await db.collection("compras").doc(identifier).set({
         nome: buyer.name,
         telefone: normalizePhone(buyer.whatsapp),
-        cpf: responseData.cpf,
+        cpf: normalizeCPF(buyer.cpf),
         pix_code: pix_code,
         identifier: identifier,
         status: "criada",
-        numero: finalNumbers,
+        numero: finalNumbers, // Empty for automatic, filled later
+        quantity: quantityNeeded + bonusNumbers,
         rifaId: raffleId,
         valor: totalAmount,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      res.json(responseData);
+      res.json({
+        success: true,
+        pix_code,
+        qr_code: qrCodeBase64,
+        identifier,
+        numbers: finalNumbers,
+        valor: totalAmount
+      });
 
     } catch (error: any) {
-      console.error("Erro ao criar pagamento:", error.message || String(error));
-      res.status(500).json({ 
-        success: false, 
-        code: "ERRO_INTERNO",
-        message: "Erro interno ao processar pagamento", 
-        details: error.message 
-      });
+      console.error("Erro ao criar pagamento:", error.message);
+      res.status(500).json({ success: false, message: "Erro ao processar pagamento" });
     }
   });
 
@@ -364,22 +325,29 @@ async function startServer() {
     const paymentRef = paymentSnap.ref;
 
     if (purchaseData.status === "paid" || purchaseData.status === "pago") {
-      console.log("[Webhook] Pagamento já estava confirmado anteriormente.");
       return res.json({ success: true, message: "Já processado" });
     }
 
-    const { rifaId, numero, nome, telefone, valor } = purchaseData;
-    console.log(`[Webhook] Processando ${numero?.length} números para a rifa ${rifaId}`);
+    const { rifaId, numero, nome, telefone, valor, quantity } = purchaseData;
+    const db = getDb();
+    const raffleRef = db.collection("raffles").doc(rifaId);
+    const raffleSnap = await raffleRef.get();
+    
+    if (!raffleSnap.exists) return res.status(404).json({ error: "Rifa não encontrada" });
+    const raffleData = raffleSnap.data()!;
 
-    const batch = getDb().batch();
-    const raffleRef = getDb().collection("raffles").doc(rifaId);
+    let finalNumbers = Array.isArray(numero) ? numero : [];
+    
+    // Generate numbers for automatic raffle
+    if (raffleData.type === 'automatic' && finalNumbers.length === 0) {
+      finalNumbers = await generateUniqueNumbers(rifaId, quantity || 1, raffleData.total_numbers || 1000000);
+    }
+
+    const batch = db.batch();
     const numbersRef = raffleRef.collection("numbers");
 
-    const numbersToConfirm = Array.isArray(numero) ? numero : [numero];
-    
-    for (const num of numbersToConfirm) {
-      const numDocRef = numbersRef.doc(num.toString());
-      batch.set(numDocRef, {
+    for (const num of finalNumbers) {
+      batch.set(numbersRef.doc(String(num)), {
         number: Number(num),
         status: 'paid',
         userName: nome,
@@ -388,36 +356,114 @@ async function startServer() {
       }, { merge: true });
     }
 
+    // Roulette Eligibility
+    let rouletteEligible = false;
+    if (raffleData.roulette?.active && valor >= (raffleData.roulette.min_purchase_value || 0)) {
+      rouletteEligible = true;
+    }
+
     batch.update(raffleRef, {
-      sold_count: admin.firestore.FieldValue.increment(numbersToConfirm.length),
+      sold_count: admin.firestore.FieldValue.increment(finalNumbers.length),
       revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
       updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     batch.update(paymentRef, {
       status: "paid",
+      numero: finalNumbers,
       paid_at: admin.firestore.FieldValue.serverTimestamp(),
-      webhook_raw: admin.firestore.FieldValue.serverTimestamp() // Log de recebimento
+      roulette_spin: {
+        eligible: rouletteEligible,
+        spun: false
+      }
     });
 
     const userPhone = normalizePhone(telefone);
     if (userPhone) {
-      const userRef = getDb().collection("users").doc(userPhone);
+      const userRef = db.collection("users").doc(userPhone);
       batch.set(userRef, {
         name: nome,
         whatsapp: userPhone,
         purchases: admin.firestore.FieldValue.arrayUnion({
           rifaId,
-          numero: numbersToConfirm,
+          numero: finalNumbers,
           paid_at: new Date().toISOString()
         })
       }, { merge: true });
     }
 
     await batch.commit();
-    console.log(`[Webhook] Compra ${paymentSnap.id} finalizada com sucesso!`);
-    res.json({ success: true, message: "Pagamento confirmado! Boa sorte 🍀" });
+    res.json({ success: true, message: "Pagamento confirmado!" });
   }
+
+  // Spin Roulette
+  app.post("/api/spin-roulette", async (req, res) => {
+    const { purchaseId } = req.body;
+    if (!purchaseId) return res.status(400).json({ success: false, message: "ID da compra obrigatório" });
+
+    try {
+      const db = getDb();
+      const purchaseRef = db.collection("compras").doc(purchaseId);
+      const purchaseSnap = await purchaseRef.get();
+
+      if (!purchaseSnap.exists) return res.status(404).json({ success: false, message: "Compra não encontrada" });
+      const purchaseData = purchaseSnap.data()!;
+
+      if (!purchaseData.roulette_spin?.eligible || purchaseData.roulette_spin?.spun) {
+        return res.status(400).json({ success: false, message: "Roleta não disponível ou já utilizada" });
+      }
+
+      const raffleRef = db.collection("raffles").doc(purchaseData.rifaId);
+      const raffleSnap = await raffleRef.get();
+      const raffleData = raffleSnap.data()!;
+
+      if (!raffleData.roulette?.active) return res.status(400).json({ success: false, message: "Roleta desativada" });
+
+      const result = calculateRouletteResult(raffleData.roulette.prizes);
+
+      // Apply prize
+      if (result.type === 'numeros') {
+        const bonusNumbers = await generateUniqueNumbers(purchaseData.rifaId, result.value, raffleData.total_numbers);
+        const batch = db.batch();
+        const numbersRef = raffleRef.collection("numbers");
+        
+        for (const num of bonusNumbers) {
+          batch.set(numbersRef.doc(String(num)), {
+            number: Number(num),
+            status: 'paid',
+            userName: purchaseData.nome,
+            userId: purchaseData.telefone,
+            is_bonus: true,
+            updated_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+        
+        batch.update(purchaseRef, {
+          numero: admin.firestore.FieldValue.arrayUnion(...bonusNumbers),
+          "roulette_spin.spun": true,
+          "roulette_spin.result": result,
+          "roulette_spin.spun_at": admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        batch.update(raffleRef, {
+          sold_count: admin.firestore.FieldValue.increment(bonusNumbers.length)
+        });
+        
+        await batch.commit();
+      } else {
+        // PIX Prize - Just record it (Admin will pay manually or integrate later)
+        await purchaseRef.update({
+          "roulette_spin.spun": true,
+          "roulette_spin.result": result,
+          "roulette_spin.spun_at": admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+
+      res.json({ success: true, result });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
 
   // Consultar Números
   app.post("/api/consultar-numeros", async (req, res) => {

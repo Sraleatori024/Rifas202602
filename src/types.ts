@@ -38,12 +38,33 @@ export interface Winner {
   drawn_at: string;
 }
 
+export interface RoulettePrize {
+  id: string;
+  type: 'numeros' | 'pix';
+  value: number;
+  chance: number; // 0-100
+}
+
+export interface RouletteConfig {
+  active: boolean;
+  min_purchase_value: number;
+  prizes: RoulettePrize[];
+}
+
+export interface PromotionConfig {
+  active: boolean;
+  type: 'discount' | 'bonus';
+  value: number; // percentage for discount, quantity for bonus
+  min_purchase_quantity: number;
+}
+
 export interface Raffle {
   id: string;
   name: string;
   description: string;
   price: number;
   total_numbers: number;
+  type: 'manual' | 'automatic';
   start_date: string;
   end_date?: string;
   indeterminate_date: boolean;
@@ -62,15 +83,8 @@ export interface Raffle {
   prizes?: Prize[];
   packages?: RafflePackage[];
   winners?: Winner[];
-  promotion?: {
-    active: boolean;
-    package_quantity: number;
-    package_price: number;
-    original_price: number;
-    start_date: string;
-    end_date: string;
-    label: string;
-  };
+  promotion?: PromotionConfig;
+  roulette?: RouletteConfig;
 }
 
 export interface RaffleNumber {

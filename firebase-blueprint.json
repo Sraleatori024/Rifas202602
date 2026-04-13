@@ -9,6 +9,7 @@
         "description": { "type": "string" },
         "price": { "type": "number" },
         "total_numbers": { "type": "integer" },
+        "type": { "type": "string", "enum": ["manual", "automatic"] },
         "image_url": { "type": "string" },
         "start_date": { "type": "string", "format": "date" },
         "end_date": { "type": "string", "format": "date" },
@@ -21,9 +22,11 @@
         "progress_percent": { "type": "integer" },
         "sold_count": { "type": "integer" },
         "revenue": { "type": "number" },
-        "created_at": { "type": "string", "format": "date-time" }
+        "created_at": { "type": "string", "format": "date-time" },
+        "promotion": { "type": "object" },
+        "roulette": { "type": "object" }
       },
-      "required": ["name", "price", "total_numbers", "status"]
+      "required": ["name", "price", "total_numbers", "status", "type"]
     },
     "Purchase": {
       "title": "Purchase",
@@ -40,7 +43,15 @@
         "identifier": { "type": "string" },
         "pix_code": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "paid_at": { "type": "string", "format": "date-time" }
+        "paid_at": { "type": "string", "format": "date-time" },
+        "roulette_spin": {
+          "type": "object",
+          "properties": {
+            "spun": { "type": "boolean" },
+            "result": { "type": "object" },
+            "spun_at": { "type": "string", "format": "date-time" }
+          }
+        }
       },
       "required": ["rifaId", "numero", "valor", "status"]
     },

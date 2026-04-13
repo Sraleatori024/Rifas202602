@@ -19,8 +19,18 @@ service cloud.firestore {
       
       match /numbers/{numberId} {
         allow read: if true;
-        allow write: if true; // Needed for reservation during purchase
+        // Allow reservation: only if status is available and we are changing to reserved
+        allow write: if isAdmin() || (
+          request.resource.data.status == 'reserved' && 
+          (resource == null || resource.data.status == 'available')
+        );
       }
+    }
+
+    // Roulette Results: Only server can write (via Admin SDK), users can read
+    match /roulette_results/{resultId} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // Purchases (Compras): Admin can read/write all, users can read their own, anyone can create

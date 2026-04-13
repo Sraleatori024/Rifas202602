@@ -61,6 +61,66 @@ import {
 
 // --- Components ---
 
+// --- Components ---
+
+const Roulette = ({ purchaseId, onResult }: { purchaseId: string, onResult: (result: any) => void }) => {
+  const [spinning, setSpinning] = useState(false);
+  const [result, setResult] = useState<any>(null);
+
+  const handleSpin = async () => {
+    setSpinning(true);
+    try {
+      const res = await fetch('/api/spin-roulette', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ purchaseId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResult(data.result);
+        onResult(data.result);
+      } else {
+        alert(data.message || "Erro ao girar roleta");
+      }
+    } catch (err) {
+      alert("Erro de conexão");
+    } finally {
+      setSpinning(false);
+    }
+  };
+
+  return (
+    <div className="card p-8 text-center bg-gradient-to-br from-primary/10 to-secondary/10 border-2 border-primary/20">
+      <div className="w-20 h-20 bg-primary/20 text-primary rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+        <Trophy className="w-10 h-10" />
+      </div>
+      <h3 className="text-2xl font-black text-slate-900 mb-2">RODA DA SORTE! 🎡</h3>
+      <p className="text-slate-600 mb-6">Você ganhou um giro bônus por sua compra!</p>
+      
+      {!result ? (
+        <button
+          onClick={handleSpin}
+          disabled={spinning}
+          className={cn(
+            "btn-primary px-12 py-4 text-lg font-black rounded-2xl shadow-xl shadow-primary/30",
+            spinning && "opacity-50 cursor-not-allowed"
+          )}
+        >
+          {spinning ? "GIRANDO..." : "GIRAR AGORA!"}
+        </button>
+      ) : (
+        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="bg-white p-6 rounded-3xl shadow-2xl border-2 border-emerald-500">
+          <p className="text-emerald-600 font-black uppercase tracking-widest mb-2">Parabéns! Você ganhou:</p>
+          <p className="text-4xl font-black text-slate-900">
+            {result.type === 'numeros' ? `${result.value} Números Extras` : `R$ ${result.value} via PIX`}
+          </p>
+          <p className="text-xs text-slate-500 mt-4">O prêmio foi adicionado à sua conta.</p>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
 const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogout: () => void, setShowConsult: (show: boolean) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -456,33 +516,31 @@ const RaffleDetails = () => {
   };
 
   const handlePurchase = async () => {
-    // 1. Proteção contra múltiplos cliques (Guard Clause)
-    if (generatingPix) {
-      console.log("handlePurchase ignorado: já existe uma requisição em andamento.");
-      return;
-    }
-
-    console.log("handlePurchase iniciado", {
-      raffleId: String(raffleId),
-      numbersCount: selectedNumbers.length,
-      buyerName: buyerInfo.name,
-      packageId: selectedPackage?.id
-    });
+    if (generatingPix) return;
 
     if (!buyerInfo.name || !buyerInfo.whatsapp) {
       alert("Por favor, preencha nome e WhatsApp.");
       return;
     }
 
+    if (raffle?.type === 'manual' && selectedNumbers.length === 0 && !selectedPackage) {
+      alert("Por favor, selecione ao menos um número ou pacote.");
+      return;
+    }
+
+    if (raffle?.type === 'automatic' && !selectedPackage) {
+      alert("Por favor, selecione um pacote.");
+      return;
+    }
+
     setGeneratingPix(true);
     try {
-      // Call the secure API for payment simulation
       const res = await fetch('/api/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           raffleId: String(raffleId),
-          numbers: [...selectedNumbers],
+          numbers: raffle?.type === 'manual' ? [...selectedNumbers] : [],
           buyer: {
             name: String(buyerInfo.name || ''),
             whatsapp: String(buyerInfo.whatsapp || ''),
@@ -495,31 +553,18 @@ const RaffleDetails = () => {
 
       if (res.ok) {
         const data = await res.json();
-        
-        const pixCode = data.pix_code;
-        const qrImage = data.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
-
         setPurchaseId(data.identifier);
         setPixData({
-          qrcode: qrImage,
-          copyPaste: pixCode
+          qrcode: data.qr_code,
+          copyPaste: data.pix_code
         });
         setStep(3);
       } else {
         const error = await res.json();
-        if (error.message?.includes('Quota exceeded') || error.details?.includes('Quota exceeded')) {
-          alert("Limite de transações atingido para hoje. Por favor, tente novamente mais tarde.");
-        } else {
-          alert(error.message || error.error || "Erro ao processar compra.");
-        }
+        alert(error.message || "Erro ao processar compra.");
       }
     } catch (err: any) {
-      console.error("Erro ao processar compra:", err.message || String(err));
-      if (err.message?.includes('Quota exceeded') || err.toString().includes('Quota exceeded')) {
-        alert("Limite de transações atingido para hoje. Por favor, tente novamente mais tarde.");
-      } else {
-        alert("Erro ao processar compra.");
-      }
+      alert("Erro ao processar compra.");
     } finally {
       setGeneratingPix(false);
     }
@@ -704,7 +749,7 @@ const RaffleDetails = () => {
               <p className="text-slate-500">Infelizmente todos os números já foram comprados.</p>
             </div>
           ) : (
-            step === 1 && (
+            step === 1 && raffle.type === 'manual' && (
               <div className="card p-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                   <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
@@ -904,6 +949,20 @@ const RaffleDetails = () => {
                     ))}
                   </div>
                 </div>
+
+                {confirmedPurchase?.roulette_spin?.eligible && !confirmedPurchase?.roulette_spin?.spun && (
+                  <div className="mb-8">
+                    <Roulette 
+                      purchaseId={purchaseId!} 
+                      onResult={(res) => {
+                        // Optional: update UI with new numbers if prize was numbers
+                        if (res.type === 'numeros') {
+                          // The numbers will appear in the next snapshot update anyway
+                        }
+                      }} 
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-4">
                   <Link to="/" className="btn-primary w-full py-4 text-lg shadow-xl shadow-primary/20">
@@ -1405,7 +1464,7 @@ const AdminDashboard = () => {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [newRaffle, setNewRaffle] = useState({
+  const [newRaffle, setNewRaffle] = useState<any>({
     name: '',
     description: '',
     price: 1.00,
@@ -1419,16 +1478,24 @@ const AdminDashboard = () => {
     min_purchase_quantity: 1,
     min_revenue_goal: 0,
     min_sales_percent: 0,
+    type: 'manual',
     prizes: [] as any[],
     packages: [] as any[],
     promotion: {
       active: false,
-      package_quantity: 1,
-      package_price: 0,
-      original_price: 0,
-      start_date: '',
-      end_date: '',
+      type: 'discount',
+      value: 0,
+      min_purchase_quantity: 10,
       label: '🔥 MEGA PROMOÇÃO'
+    },
+    roulette: {
+      active: false,
+      min_purchase_value: 50,
+      prizes: [
+        { type: 'numeros', value: 5, chance: 70 },
+        { type: 'numeros', value: 10, chance: 20 },
+        { type: 'pix', value: 50, chance: 10 }
+      ]
     }
   });
   const [creating, setCreating] = useState(false);
@@ -1532,16 +1599,24 @@ const AdminDashboard = () => {
       min_purchase_quantity: raffle.min_purchase_quantity || 1,
       min_revenue_goal: raffle.min_revenue_goal || 0,
       min_sales_percent: raffle.min_sales_percent || 0,
+      type: raffle.type || 'manual',
       prizes: raffle.prizes || [],
       packages: raffle.packages || [],
       promotion: raffle.promotion || {
         active: false,
-        package_quantity: 1,
-        package_price: 0,
-        original_price: 0,
-        start_date: '',
-        end_date: '',
+        type: 'discount',
+        value: 0,
+        min_purchase_quantity: 10,
         label: '🔥 MEGA PROMOÇÃO'
+      },
+      roulette: raffle.roulette || {
+        active: false,
+        min_purchase_value: 50,
+        prizes: [
+          { type: 'numeros', value: 5, chance: 70 },
+          { type: 'numeros', value: 10, chance: 20 },
+          { type: 'pix', value: 50, chance: 10 }
+        ]
       }
     });
     setShowCreate(true);
@@ -1797,16 +1872,24 @@ const AdminDashboard = () => {
         min_purchase_quantity: 1,
         min_revenue_goal: 0,
         min_sales_percent: 0,
+        type: 'manual',
         prizes: [],
         packages: [],
         promotion: {
           active: false,
-          package_quantity: 1,
-          package_price: 0,
-          original_price: 0,
-          start_date: '',
-          end_date: '',
+          type: 'discount',
+          value: 0,
+          min_purchase_quantity: 10,
           label: '🔥 MEGA PROMOÇÃO'
+        },
+        roulette: {
+          active: false,
+          min_purchase_value: 50,
+          prizes: [
+            { type: 'numeros', value: 5, chance: 70 },
+            { type: 'numeros', value: 10, chance: 20 },
+            { type: 'pix', value: 50, chance: 10 }
+          ]
         }
       });
       alert("Rifa salva com sucesso!");
@@ -2131,6 +2214,17 @@ const AdminDashboard = () => {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Tipo de Rifa</label>
+                    <select 
+                      value={newRaffle.type}
+                      onChange={e => setNewRaffle({...newRaffle, type: e.target.value})}
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    >
+                      <option value="manual">Manual (Usuário escolhe)</option>
+                      <option value="automatic">Automática (Sistema gera)</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Quantidade de Números</label>
                     <input 
                       type="number" 
@@ -2425,7 +2519,7 @@ const AdminDashboard = () => {
                     <div className="flex justify-between items-center">
                       <h3 className="font-bold text-red-900 flex items-center gap-2">
                         <Trophy className="w-4 h-4" />
-                        Promoção Mega Gatilho
+                        Promoção e Descontos
                       </h3>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input 
@@ -2450,40 +2544,106 @@ const AdminDashboard = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Qtd. Números no Pacote</label>
+                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Tipo de Promoção</label>
+                          <select 
+                            value={newRaffle.promotion.type}
+                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, type: e.target.value}})}
+                            className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
+                          >
+                            <option value="discount">Desconto (%)</option>
+                            <option value="bonus">Números Bônus (Qtd)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Valor do Benefício</label>
                           <input 
                             type="number"
-                            value={newRaffle.promotion.package_quantity}
-                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, package_quantity: parseInt(e.target.value)}})}
+                            value={newRaffle.promotion.value}
+                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, value: parseFloat(e.target.value)}})}
                             className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Preço Promocional (R$)</label>
+                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Mínimo de Números</label>
                           <input 
-                            type="number" step="0.01"
-                            value={newRaffle.promotion.package_price}
-                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, package_price: parseFloat(e.target.value)}})}
+                            type="number"
+                            value={newRaffle.promotion.min_purchase_quantity}
+                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, min_purchase_quantity: parseInt(e.target.value)}})}
                             className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
                           />
                         </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="md:col-span-2 p-4 bg-amber-50 rounded-2xl border border-amber-100 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-bold text-amber-900 flex items-center gap-2">
+                        <RefreshCw className="w-4 h-4" />
+                        Configuração da Roleta
+                      </h3>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer"
+                          checked={newRaffle.roulette.active}
+                          onChange={e => setNewRaffle({...newRaffle, roulette: {...newRaffle.roulette, active: e.target.checked}})}
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                      </label>
+                    </div>
+                    
+                    {newRaffle.roulette.active && (
+                      <div className="space-y-4 pt-2">
                         <div>
-                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Data Início</label>
+                          <label className="block text-xs font-bold text-amber-700 uppercase mb-1">Valor Mínimo Compra (R$)</label>
                           <input 
-                            type="date"
-                            value={newRaffle.promotion.start_date}
-                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, start_date: e.target.value}})}
-                            className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
+                            type="number"
+                            value={newRaffle.roulette.min_purchase_value}
+                            onChange={e => setNewRaffle({...newRaffle, roulette: {...newRaffle.roulette, min_purchase_value: parseFloat(e.target.value)}})}
+                            className="w-full px-3 py-2 rounded-lg border border-amber-200 outline-none focus:ring-2 focus:ring-amber-500/20"
                           />
                         </div>
-                        <div>
-                          <label className="block text-xs font-bold text-red-700 uppercase mb-1">Data Fim</label>
-                          <input 
-                            type="date"
-                            value={newRaffle.promotion.end_date}
-                            onChange={e => setNewRaffle({...newRaffle, promotion: {...newRaffle.promotion, end_date: e.target.value}})}
-                            className="w-full px-3 py-2 rounded-lg border border-red-200 outline-none focus:ring-2 focus:ring-red-500/20"
-                          />
+                        <div className="space-y-2">
+                          <label className="block text-xs font-bold text-amber-700 uppercase">Prêmios da Roleta</label>
+                          {newRaffle.roulette.prizes.map((prize: any, idx: number) => (
+                            <div key={idx} className="grid grid-cols-3 gap-2 bg-white p-2 rounded-lg border border-amber-100">
+                              <select 
+                                value={prize.type}
+                                onChange={e => {
+                                  const newPrizes = [...newRaffle.roulette.prizes];
+                                  newPrizes[idx].type = e.target.value;
+                                  setNewRaffle({...newRaffle, roulette: {...newRaffle.roulette, prizes: newPrizes}});
+                                }}
+                                className="text-xs border-none focus:ring-0"
+                              >
+                                <option value="numeros">Números</option>
+                                <option value="pix">PIX (R$)</option>
+                              </select>
+                              <input 
+                                type="number"
+                                value={prize.value}
+                                onChange={e => {
+                                  const newPrizes = [...newRaffle.roulette.prizes];
+                                  newPrizes[idx].value = parseFloat(e.target.value);
+                                  setNewRaffle({...newRaffle, roulette: {...newRaffle.roulette, prizes: newPrizes}});
+                                }}
+                                className="text-xs border-none focus:ring-0"
+                                placeholder="Valor"
+                              />
+                              <input 
+                                type="number"
+                                value={prize.chance}
+                                onChange={e => {
+                                  const newPrizes = [...newRaffle.roulette.prizes];
+                                  newPrizes[idx].chance = parseFloat(e.target.value);
+                                  setNewRaffle({...newRaffle, roulette: {...newRaffle.roulette, prizes: newPrizes}});
+                                }}
+                                className="text-xs border-none focus:ring-0"
+                                placeholder="Chance %"
+                              />
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
