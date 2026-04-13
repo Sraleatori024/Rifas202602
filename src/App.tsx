@@ -325,6 +325,7 @@ const RaffleDetails = () => {
   const [generatingPix, setGeneratingPix] = useState(false);
   const [step, setStep] = useState(1); // 1: Selection, 2: Info, 3: Payment, 4: Success
   const [purchaseId, setPurchaseId] = useState<string | null>(null);
+  const [confirmedPurchase, setConfirmedPurchase] = useState<any | null>(null);
   const [stats, setStats] = useState({ total: 0, sold: 0, available: 0 });
 
   useEffect(() => {
@@ -383,13 +384,19 @@ const RaffleDetails = () => {
 
   useEffect(() => {
     if (!purchaseId) return;
-    console.log("Monitorando compra:", purchaseId);
+    
+    console.log("Iniciando monitoramento em tempo real da compra:", purchaseId);
+    
     const unsub = onSnapshot(doc(db, "compras", purchaseId), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        console.log("Status da compra atualizado:", data.status);
+        console.log("Atualização de status detectada:", data.status);
+        
         if (isPago(data.status)) {
-          // Save to local storage when paid
+          console.log("Pagamento CONFIRMADO via Firestore!");
+          setConfirmedPurchase(data);
+          
+          // Salva no histórico local
           saveToLocalStorage({
             raffleId: data.rifaId,
             numbers: data.numero,
@@ -397,11 +404,21 @@ const RaffleDetails = () => {
             status: 'paid',
             date: new Date().toISOString()
           });
+          
+          // Muda para a tela de sucesso
           setStep(4);
         }
+      } else {
+        console.warn("Aguardando criação do documento da compra...");
       }
+    }, (error) => {
+      console.error("Erro ao monitorar compra:", error.message || String(error));
     });
-    return () => unsub();
+
+    return () => {
+      console.log("Encerrando monitoramento da compra:", purchaseId);
+      unsub();
+    };
   }, [purchaseId]);
 
   const toggleNumber = (num: number) => {
@@ -872,12 +889,15 @@ const RaffleDetails = () => {
                 </motion.div>
                 
                 <h3 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tight">Pagamento confirmado! 🍀</h3>
-                <p className="text-xl text-slate-600 mb-8 font-medium">Boa sorte! Seus números já estão garantidos.</p>
+                <p className="text-xl text-slate-600 mb-8 font-medium">
+                  {confirmedPurchase?.nome ? `Boa sorte, ${confirmedPurchase.nome}! ` : "Boa sorte! "}
+                  Seus números já estão garantidos.
+                </p>
                 
                 <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-8">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números Pagos</p>
                   <div className="flex flex-wrap justify-center gap-2">
-                    {selectedNumbers.map(n => (
+                    {(confirmedPurchase?.numero || selectedNumbers).map((n: number) => (
                       <span key={n} className="w-12 h-12 bg-white border-2 border-emerald-500 text-emerald-600 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm">
                         {n.toString().padStart(2, '0')}
                       </span>
