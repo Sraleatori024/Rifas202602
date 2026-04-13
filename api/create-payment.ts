@@ -225,7 +225,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       amount: Number(totalAmount),
       description: `Pagamento Rifa: ${raffleData.name || "Sorteio"}`,
       webhook_url: `${appUrl}/api/webhook-syncpay`,
-      external_id: identifier,
+      external_id: String(identifier),
       client: {
         name: buyer.name || "Cliente",
         phone: normalizePhone(buyer.whatsapp),
@@ -233,6 +233,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         cpf: normalizeCPF(buyer.cpf)
       }
     };
+
+    console.log(`[API PIX] Criando cobrança para ${identifier}. Valor: ${totalAmount}`);
+    console.log(`[API PIX] Payload external_id: ${payload.external_id}`);
 
     let syncPayResult;
     try {

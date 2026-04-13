@@ -6,51 +6,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  console.log("Webhook completo:", req.body);
+  console.log("-----------------------------------------");
+  console.log("[API Webhook] Recebido em:", new Date().toISOString());
+  console.log("[API Webhook] Payload completo:", JSON.stringify(req.body, null, 2));
+
   const data = req.body;
   const status = data?.status || data?.data?.status || data?.payment?.status;
-  const external_id = data?.external_id || data?.data?.external_id;
-  const id = data?.id || data?.data?.id;
-  const paymentId = external_id || id;
+  const external_id = data?.external_id || data?.data?.external_id || data?.payment?.external_id;
+  const gateway_id = data?.id || data?.data?.id || data?.payment?.id;
+
+  console.log(`[API Webhook] Status extraído: ${status}`);
+  console.log(`[API Webhook] External ID extraído: ${external_id}`);
+  console.log(`[API Webhook] Gateway ID extraído: ${gateway_id}`);
+
+  if (!external_id) {
+    console.error("[API Webhook Erro] external_id não encontrado no payload.");
+    return res.status(400).json({ error: "external_id missing" });
+  }
 
   const normalizedStatus = String(status || "").toLowerCase().trim();
-  // SyncPay can send 'paid', 'approved', or 'completed' for successful payments
   const isSuccess = ["paid", "approved", "completed", "sucesso", "pago"].includes(normalizedStatus);
 
   if (!isSuccess) {
-    console.log(`[Webhook] Status ignorado: ${status}`);
+    console.log(`[API Webhook] Status '${status}' ignorado.`);
     return res.json({ received: true, message: `Status ${status} ignorado` });
-  }
-
-  if (!paymentId) {
-    console.error("Webhook Error: payment identifier missing (external_id or id)");
-    return res.status(400).json({ error: "payment identifier missing" });
   }
 
   try {
     const db = getDb();
-    console.log(`Webhook: Processando pagamento ${paymentId} com status ${status}`);
-    const paymentRef = db.collection("compras").doc(paymentId);
+    const paymentRef = db.collection("compras").doc(String(external_id));
     const paymentSnap = await paymentRef.get();
 
     if (!paymentSnap.exists) {
-      console.error(`Webhook Error: Compra ${paymentId} not found in database.`);
-      // Tentar buscar por external_id se o ID do documento for diferente
-      const querySnapshot = await db.collection("compras").where("identifier", "==", paymentId).get();
+      console.error(`[API Webhook Erro] Compra ${external_id} não encontrada.`);
+      const querySnapshot = await db.collection("compras").where("identifier", "==", String(external_id)).limit(1).get();
+      
       if (querySnapshot.empty) {
         return res.status(404).json({ error: "Compra não encontrada" });
       }
-      // Se encontrou pela query, usar o primeiro documento
+      
       const doc = querySnapshot.docs[0];
-      console.log(`Webhook: Compra encontrada via query identifier: ${doc.id}`);
-      // Continuar com o documento encontrado
       await processPayment(doc, res);
       return;
     }
 
     await processPayment(paymentSnap, res);
-  } catch (error) {
-    console.error("Webhook Error:", error);
+  } catch (error: any) {
+    console.error("[API Webhook Erro Crítico]:", error.message || String(error));
     res.status(500).json({ error: "Erro ao processar webhook." });
   }
 }

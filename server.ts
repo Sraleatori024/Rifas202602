@@ -26,7 +26,8 @@ const normalizeCPF = (cpf: string) => {
 
 const isPago = (status: string | undefined): boolean => {
   if (!status) return false;
-  return ["paid", "pago"].includes(status.toLowerCase());
+  const s = status.toLowerCase().trim();
+  return ["paid", "pago", "completed", "approved", "sucesso"].includes(s);
 };
 
 // 1) Criar função para gerar token automaticamente
@@ -229,7 +230,7 @@ async function startServer() {
         amount: Number(totalAmount.toFixed(2)),
         description: `Compra de rifa: ${raffleData.name || "Sorteio"}`,
         webhook_url: `${appUrl}/api/webhook-syncpay`,
-        external_id: identifier,
+        external_id: String(identifier),
         client: {
           name: buyer.name,
           cpf: normalizedCPFVal,
@@ -237,6 +238,9 @@ async function startServer() {
           phone: normalizePhone(buyer.whatsapp)
         }
       };
+
+      console.log(`[PIX] Criando cobrança para ${identifier}. Valor: ${totalAmount}`);
+      console.log(`[PIX] Payload external_id: ${payload.external_id}`);
 
       let syncPayResult;
       try {
@@ -300,122 +304,120 @@ async function startServer() {
 
   // Webhook SyncPay
   app.post("/api/webhook-syncpay", async (req, res) => {
-    console.log("Webhook completo:", req.body);
     const data = req.body;
+    console.log("-----------------------------------------");
+    console.log("[Webhook] Recebido em:", new Date().toISOString());
+    console.log("[Webhook] Payload completo:", JSON.stringify(data, null, 2));
+
+    // Extração flexível de dados (SyncPay pode enviar no root ou dentro de 'data')
     const status = data?.status || data?.data?.status || data?.payment?.status;
     const external_id = data?.external_id || data?.data?.external_id || data?.payment?.external_id;
-    const id = data?.id || data?.data?.id || data?.payment?.id;
-    const paymentId = external_id || id;
+    const gateway_id = data?.id || data?.data?.id || data?.payment?.id;
+
+    console.log(`[Webhook] Status extraído: ${status}`);
+    console.log(`[Webhook] External ID extraído: ${external_id}`);
+    console.log(`[Webhook] Gateway ID extraído: ${gateway_id}`);
+
+    if (!external_id) {
+      console.error("[Webhook Erro] external_id não encontrado no payload. Não é possível localizar a compra.");
+      return res.status(400).json({ error: "external_id missing" });
+    }
+
     const normalizedStatus = String(status || "").toLowerCase().trim();
-    const isSuccess = ["paid", "approved", "completed", "sucesso", "pago"].includes(normalizedStatus);
+    const isSuccess = isPago(normalizedStatus);
 
     if (!isSuccess) {
-      console.log(`[Webhook] Status ignorado: ${status}`);
+      console.log(`[Webhook] Status '${status}' não é de sucesso. Ignorando.`);
       return res.json({ received: true, message: `Status ${status} ignorado` });
     }
 
-    if (!paymentId) {
-      console.error("[Webhook Error] Identificador de pagamento ausente (external_id ou id)");
-      return res.status(400).json({ error: "payment identifier missing" });
-    }
-
     try {
-      let paymentSnap = null;
-      let paymentRef = null;
+      const db = getDb();
+      const paymentRef = db.collection("compras").doc(String(external_id));
+      const paymentSnap = await paymentRef.get();
 
-      // 1. Tenta buscar pelo external_id como ID do documento (que é como salvamos no create-payment)
-      if (external_id) {
-        const ref = getDb().collection("compras").doc(String(external_id));
-        const snap = await ref.get();
-        if (snap.exists) {
-          paymentSnap = snap;
-          paymentRef = ref;
+      if (!paymentSnap.exists) {
+        console.error(`[Webhook Erro] Compra ${external_id} NÃO encontrada no Firestore.`);
+        // Tenta buscar pelo campo identifier caso o ID do documento seja diferente
+        const querySnap = await db.collection("compras").where("identifier", "==", String(external_id)).limit(1).get();
+        
+        if (querySnap.empty) {
+          console.error(`[Webhook Erro] Falha total ao localizar compra ${external_id} por ID ou campo identifier.`);
+          return res.status(404).json({ error: "Compra não encontrada" });
         }
+        
+        console.log(`[Webhook] Compra encontrada via query identifier.`);
+        const doc = querySnap.docs[0];
+        await processWebhookPayment(doc, res);
+      } else {
+        console.log(`[Webhook] Compra ${external_id} encontrada com sucesso.`);
+        await processWebhookPayment(paymentSnap, res);
       }
-
-      // 2. Tenta buscar pelo id (SyncPay ID) como ID do documento (caso tenha sido salvo assim)
-      if (!paymentSnap && id) {
-        const ref = getDb().collection("compras").doc(String(id));
-        const snap = await ref.get();
-        if (snap.exists) {
-          paymentSnap = snap;
-          paymentRef = ref;
-        }
-      }
-
-      // 3. Tenta buscar pelo campo 'identifier'
-      if (!paymentSnap && paymentId) {
-        const q = await getDb().collection("compras").where("identifier", "==", String(paymentId)).limit(1).get();
-        if (!q.empty) {
-          paymentSnap = q.docs[0];
-          paymentRef = paymentSnap.ref;
-        }
-      }
-
-      if (!paymentSnap || !paymentSnap.exists) {
-        console.error(`[Webhook Error] Compra ${paymentId} não encontrada no banco de dados.`);
-        return res.status(404).json({ error: "Compra não encontrada" });
-      }
-
-      const purchaseData = paymentSnap.data();
-      if (isPago(purchaseData.status)) {
-        return res.json({ 
-          success: true, 
-          message: "Pagamento já confirmado! Boa sorte 🍀" 
-        });
-      }
-
-      const { rifaId, numero, nome, telefone, valor } = purchaseData;
-      const batch = getDb().batch();
-      const raffleRef = getDb().collection("raffles").doc(rifaId);
-      const numbersRef = raffleRef.collection("numbers");
-
-      const numbersToConfirm = Array.isArray(numero) ? numero : [numero];
-      
-      for (const num of numbersToConfirm) {
-        const numDocRef = numbersRef.doc(num.toString());
-        batch.set(numDocRef, {
-          number: Number(num),
-          status: 'paid',
-          userName: nome,
-          userId: telefone,
-          updated_at: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-      }
-
-      batch.update(raffleRef, {
-        sold_count: admin.firestore.FieldValue.increment(numbersToConfirm.length),
-        revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
-        updated_at: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      batch.update(paymentRef!, {
-        status: "paid",
-        paid_at: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      const userPhone = normalizePhone(telefone);
-      if (userPhone) {
-        const userRef = getDb().collection("users").doc(userPhone);
-        batch.set(userRef, {
-          name: nome,
-          whatsapp: userPhone,
-          purchases: admin.firestore.FieldValue.arrayUnion({
-            rifaId,
-            numero: numbersToConfirm,
-            paid_at: new Date().toISOString()
-          })
-        }, { merge: true });
-      }
-
-      await batch.commit();
-      res.json({ success: true, message: "Pagamento confirmado! Boa sorte 🍀" });
-
     } catch (error: any) {
-      console.error("[Webhook Error]:", error.message || String(error));
-      res.status(500).json({ error: "Erro ao processar webhook.", details: error.message });
+      console.error("[Webhook Erro Crítico]:", error.message || String(error));
+      res.status(500).json({ error: "Erro interno ao processar webhook" });
     }
   });
+
+  async function processWebhookPayment(paymentSnap: any, res: any) {
+    const purchaseData = paymentSnap.data();
+    const paymentRef = paymentSnap.ref;
+
+    if (purchaseData.status === "paid" || purchaseData.status === "pago") {
+      console.log("[Webhook] Pagamento já estava confirmado anteriormente.");
+      return res.json({ success: true, message: "Já processado" });
+    }
+
+    const { rifaId, numero, nome, telefone, valor } = purchaseData;
+    console.log(`[Webhook] Processando ${numero?.length} números para a rifa ${rifaId}`);
+
+    const batch = getDb().batch();
+    const raffleRef = getDb().collection("raffles").doc(rifaId);
+    const numbersRef = raffleRef.collection("numbers");
+
+    const numbersToConfirm = Array.isArray(numero) ? numero : [numero];
+    
+    for (const num of numbersToConfirm) {
+      const numDocRef = numbersRef.doc(num.toString());
+      batch.set(numDocRef, {
+        number: Number(num),
+        status: 'paid',
+        userName: nome,
+        userId: telefone,
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
+    batch.update(raffleRef, {
+      sold_count: admin.firestore.FieldValue.increment(numbersToConfirm.length),
+      revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    batch.update(paymentRef, {
+      status: "paid",
+      paid_at: admin.firestore.FieldValue.serverTimestamp(),
+      webhook_raw: admin.firestore.FieldValue.serverTimestamp() // Log de recebimento
+    });
+
+    const userPhone = normalizePhone(telefone);
+    if (userPhone) {
+      const userRef = getDb().collection("users").doc(userPhone);
+      batch.set(userRef, {
+        name: nome,
+        whatsapp: userPhone,
+        purchases: admin.firestore.FieldValue.arrayUnion({
+          rifaId,
+          numero: numbersToConfirm,
+          paid_at: new Date().toISOString()
+        })
+      }, { merge: true });
+    }
+
+    await batch.commit();
+    console.log(`[Webhook] Compra ${paymentSnap.id} finalizada com sucesso!`);
+    res.json({ success: true, message: "Pagamento confirmado! Boa sorte 🍀" });
+  }
 
   // Consultar Números
   app.post("/api/consultar-numeros", async (req, res) => {
