@@ -144,9 +144,16 @@ async function startServer() {
 
   // Create Payment (SyncPay PIX)
   app.post("/api/create-payment", async (req, res) => {
-    const { raffleId, numbers: requestedNumbers, buyer, packageId } = req.body;
+    console.log("DEBUG: Recebido em /api/create-payment:", JSON.stringify(req.body, null, 2));
     
-    if (!raffleId || (!requestedNumbers?.length && !packageId) || !buyer || !buyer.whatsapp || !buyer.name) {
+    const { raffleId, buyer } = req.body;
+    
+    // Suporte a nomes de campos em português e inglês para compatibilidade
+    const requestedNumbers = req.body.numbers || req.body.numero;
+    const pkgInfo = req.body.packageId || req.body.pacote;
+    
+    // Validação básica: precisa de Rifa, Comprador e ou Números ou Pacote
+    if (!raffleId || (!requestedNumbers?.length && !pkgInfo) || !buyer || !buyer.whatsapp || !buyer.name) {
       return res.status(400).json({ 
         success: false, 
         code: "DADOS_INCOMPLETOS",
@@ -169,20 +176,35 @@ async function startServer() {
       let quantityNeeded = 0;
       let bonusNumbers = 0;
 
-      // 1. Identify Numbers and Calculate Price
-      if (packageId) {
-        const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
-        if (!pkg) return res.status(400).json({ success: false, message: "Pacote não encontrado." });
-        
-        quantityNeeded = pkg.quantity;
-        totalAmount = pkg.price;
-      } else {
+      // 1. Identificar Números ou Pacote e Calcular Preço
+      if (pkgInfo) {
+        if (typeof pkgInfo === 'string') {
+          // Caso seja um ID de pacote (sistema atual)
+          const pkg = (raffleData.packages || []).find((p: any) => p.id === pkgInfo);
+          if (!pkg) return res.status(400).json({ success: false, message: "Pacote não encontrado." });
+          quantityNeeded = pkg.quantity;
+          totalAmount = pkg.price;
+        } else if (typeof pkgInfo === 'object') {
+          // Caso seja um objeto com quantidade e preço (novo requisito)
+          quantityNeeded = pkgInfo.quantidade || pkgInfo.quantity || 0;
+          totalAmount = pkgInfo.preco || pkgInfo.price || 0;
+          
+          if (quantityNeeded <= 0) {
+            return res.status(400).json({ success: false, message: "Quantidade do pacote inválida." });
+          }
+        } else {
+          return res.status(400).json({ success: false, message: "Formato de pacote inválido." });
+        }
+      } else if (requestedNumbers && Array.isArray(requestedNumbers)) {
+        // Caso seja seleção manual de números
         if (raffleData.type === 'automatic') {
-          return res.status(400).json({ success: false, message: "Esta rifa aceita apenas pacotes." });
+          return res.status(400).json({ success: false, message: "Esta rifa aceita apenas pacotes (números automáticos)." });
         }
         quantityNeeded = requestedNumbers.length;
         totalAmount = quantityNeeded * (raffleData.price || 0);
         finalNumbers = requestedNumbers;
+      } else {
+        return res.status(400).json({ success: false, message: "Nenhum número ou pacote selecionado." });
       }
 
       // 2. Apply Promotions
