@@ -132,6 +132,16 @@ const calculateRouletteResult = (prizes: any[]) => {
 async function startServer() {
   const app = express();
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // Global logger for debugging
+  app.use((req, res, next) => {
+    if (req.url.startsWith('/api')) {
+      console.log(`[API REQUEST] ${req.method} ${req.url}`);
+      console.log(`[API HEADERS]`, JSON.stringify(req.headers, null, 2));
+    }
+    next();
+  });
 
   const PORT = 3000;
 
@@ -144,11 +154,12 @@ async function startServer() {
 
   // Create Payment (SyncPay PIX)
   app.post("/api/create-payment", async (req, res) => {
-    console.log("--------------------------------------------------");
-    console.log("BACKEND: Requisição recebida em /api/create-payment");
-    console.log("BODY:", JSON.stringify(req.body, null, 2));
+    console.log("==================================================");
+    console.log("EXPRESS BACKEND: /api/create-payment");
+    console.log("BODY TYPE:", typeof req.body);
+    console.log("BODY KEYS:", Object.keys(req.body || {}));
+    console.log("FULL BODY:", JSON.stringify(req.body, null, 2));
     
-    // Suporte tanto a estrutura aninhada quanto a plana
     const raffleId = req.body.rifaId || req.body.raffleId;
     const buyer = req.body.buyer || {
       name: req.body.nome || req.body.name,

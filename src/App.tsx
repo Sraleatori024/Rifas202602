@@ -534,7 +534,7 @@ const RaffleDetails = () => {
     }
 
     const payload = {
-      rifaId: String(raffleId),
+      rifaId: String(raffleId || ''),
       nome: String(buyerInfo.name || ''),
       telefone: String(buyerInfo.whatsapp || ''),
       cpf: String(buyerInfo.cpf || ''),
@@ -543,10 +543,19 @@ const RaffleDetails = () => {
       pacote: selectedPackage?.id ? String(selectedPackage.id) : undefined
     };
 
-    console.log("FRONTEND: Enviando payload para /api/create-payment:", payload);
+    console.log("==================================================");
+    console.log("FRONTEND: Iniciando handlePurchase");
+    console.log("FRONTEND: Payload que será enviado:", JSON.stringify(payload, null, 2));
+
+    if (!payload.rifaId || payload.rifaId === 'undefined') {
+      console.error("FRONTEND: Erro - rifaId está ausente!");
+      alert("Erro: ID da rifa não encontrado.");
+      return;
+    }
 
     setGeneratingPix(true);
     try {
+      console.log("FRONTEND: Chamando fetch('/api/create-payment')...");
       const res = await fetch('/api/create-payment', {
         method: 'POST',
         headers: { 
@@ -556,11 +565,11 @@ const RaffleDetails = () => {
         body: JSON.stringify(payload)
       });
 
-      console.log("FRONTEND: Resposta do servidor (status):", res.status);
+      console.log("FRONTEND: Resposta recebida. Status:", res.status);
+      const data = await res.json();
+      console.log("FRONTEND: Dados da resposta:", JSON.stringify(data, null, 2));
 
       if (res.ok) {
-        const data = await res.json();
-        console.log("FRONTEND: Dados recebidos:", data);
         setPurchaseId(data.identifier);
         setPixData({
           qrcode: data.qr_code,

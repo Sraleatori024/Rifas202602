@@ -94,15 +94,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  console.log("--------------------------------------------------");
+  console.log("==================================================");
   console.log("[API VERCEL] create-payment: Requisição recebida");
-  console.log("BODY:", JSON.stringify(req.body, null, 2));
+  console.log("HEADERS:", JSON.stringify(req.headers, null, 2));
+  console.log("BODY TYPE:", typeof req.body);
+  console.log("BODY KEYS:", Object.keys(req.body || {}));
+  console.log("FULL BODY:", JSON.stringify(req.body, null, 2));
 
   try {
     const db = getDb();
-    if (!req.body) {
-      console.warn("[API VERCEL] Body vazio.");
-      return res.status(400).json({ error: "Body vazio." });
+    if (!req.body || Object.keys(req.body).length === 0) {
+      console.warn("[API VERCEL] Body vazio ou inválido.");
+      return res.status(400).json({ 
+        error: "Body vazio ou inválido.",
+        receivedHeaders: req.headers,
+        receivedBody: req.body
+      });
     }
 
     // Suporte tanto a estrutura aninhada quanto a plana
