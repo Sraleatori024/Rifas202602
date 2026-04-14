@@ -59,6 +59,23 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 
+// --- Helpers ---
+
+const safeStringify = (obj: any, indent = 2) => {
+  try {
+    const cache = new Set();
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (cache.has(value)) return '[Circular]';
+        cache.add(value);
+      }
+      return value;
+    }, indent);
+  } catch (e) {
+    return "[Erro ao serializar objeto]";
+  }
+};
+
 // --- Components ---
 
 // --- Components ---
@@ -73,7 +90,7 @@ const Roulette = ({ purchaseId, raffleId, onResult }: { purchaseId: string, raff
       const res = await fetch('/api/spin-roulette', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ purchaseId, raffleId })
+        body: safeStringify({ purchaseId, raffleId })
       });
       const data = await res.json();
       if (data.success) {
@@ -455,7 +472,7 @@ const RaffleDetails = () => {
         }
       }
     }, (error) => {
-      console.error("Erro ao escutar status da compra:", error);
+      console.error("Erro ao escutar status da compra:", safeStringify(error));
     });
 
     return () => unsub();
@@ -474,7 +491,7 @@ const RaffleDetails = () => {
         status: String(item.status || ''),
         date: String(item.date || '')
       }));
-      localStorage.setItem('minhas_rifas', JSON.stringify(safeData));
+      localStorage.setItem('minhas_rifas', safeStringify(safeData));
     } catch (e: any) {
       console.error("Erro ao salvar no localStorage:", e.message || String(e));
     }
@@ -587,7 +604,7 @@ const RaffleDetails = () => {
 
     console.log("==================================================");
     console.log("FRONTEND: Iniciando handlePurchase");
-    console.log("FRONTEND: Payload que será enviado:", JSON.stringify(payload, null, 2));
+    console.log("FRONTEND: Payload que será enviado:", safeStringify(payload));
 
     if (!payload.rifaId || payload.rifaId === 'undefined') {
       console.error("FRONTEND: Erro - rifaId está ausente!");
@@ -604,12 +621,12 @@ const RaffleDetails = () => {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify(payload)
+        body: safeStringify(payload)
       });
 
       console.log("FRONTEND: Resposta recebida. Status:", res.status);
       const data = await res.json();
-      console.log("FRONTEND: Dados da resposta:", JSON.stringify(data, null, 2));
+      console.log("FRONTEND: Dados da resposta:", safeStringify(data));
 
       if (res.ok) {
         setPurchaseId(data.identifier);
@@ -619,7 +636,7 @@ const RaffleDetails = () => {
         });
         setStep(3);
       } else {
-        console.error("FRONTEND: Erro retornado pelo servidor:", data);
+        console.error("FRONTEND: Erro retornado pelo servidor:", safeStringify(data));
         alert(data.message || "Erro ao processar compra.");
       }
     } catch (err: any) {
@@ -1072,15 +1089,26 @@ const RaffleDetails = () => {
 
               {step === 1 && (
                 <div className="space-y-4">
-                  {selectedNumbers.length > 0 && selectedNumbers.length < (raffle.min_purchase_quantity || 1) && (
+                  {raffle.type === 'manual' && selectedNumbers.length > 0 && selectedNumbers.length < (raffle.min_purchase_quantity || 1) && (
                     <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100">
                       <AlertCircle className="w-4 h-4" />
                       A compra mínima para esta rifa é de {raffle.min_purchase_quantity} números.
                     </div>
                   )}
                   <button 
-                    disabled={selectedNumbers.length < (raffle.min_purchase_quantity || 1)}
-                    onClick={() => setStep(2)}
+                    disabled={
+                      raffle.type === 'manual' 
+                        ? selectedNumbers.length < (raffle.min_purchase_quantity || 1)
+                        : !selectedPackage
+                    }
+                    onClick={() => {
+                      console.log("Estado ao clicar Continuar:", {
+                        type: raffle.type,
+                        selectedNumbers: selectedNumbers.length,
+                        selectedPackage: !!selectedPackage
+                      });
+                      setStep(2);
+                    }}
                     className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Continuar
@@ -1122,14 +1150,18 @@ const RaffleDetails = () => {
       </div>
 
       {/* Floating Purchase Button (Mobile) */}
-      {selectedNumbers.length > 0 && (step === 1 || step === 2) && (
+      {(selectedNumbers.length > 0 || selectedPackage) && (step === 1 || step === 2) && (
         <div className="fixed bottom-6 left-4 right-4 z-50 md:hidden">
           <motion.button
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             onClick={() => step === 1 ? setStep(2) : handlePurchase()}
             disabled={
-              (step === 1 && selectedNumbers.length < (raffle.min_purchase_quantity || 1)) ||
+              (step === 1 && (
+                raffle.type === 'manual' 
+                  ? selectedNumbers.length < (raffle.min_purchase_quantity || 1)
+                  : !selectedPackage
+              )) ||
               (step === 2 && generatingPix)
             }
             className="w-full bg-primary text-white p-4 rounded-2xl shadow-2xl shadow-primary/40 flex items-center justify-between font-black disabled:opacity-50"
@@ -1412,7 +1444,7 @@ const DebugPanel = () => {
       const response = await fetch('/api/webhook-syncpay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'paid', external_id: purchaseId })
+        body: safeStringify({ status: 'paid', external_id: purchaseId })
       });
       const data = await response.json();
       setResult(data);
@@ -1488,7 +1520,7 @@ const DebugPanel = () => {
           </div>
           {result && (
             <pre className="p-4 bg-slate-900 text-emerald-400 rounded-2xl text-xs overflow-x-auto font-mono border border-slate-800">
-              {JSON.stringify(result, null, 2)}
+              {safeStringify(result)}
             </pre>
           )}
         </div>
@@ -2810,7 +2842,7 @@ export default function App() {
       const res = await fetch('/api/consultar-numeros', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: safeStringify({ 
           whatsapp: normalizedPhone ? String(normalizedPhone) : undefined,
           cpf: normalizedCpf ? String(normalizedCpf) : undefined
         })

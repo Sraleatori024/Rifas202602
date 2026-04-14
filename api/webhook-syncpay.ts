@@ -1,6 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb, admin } from '../lib/firebase-admin.js';
 
+const safeStringify = (obj: any, indent: number = 2) => {
+  try {
+    const cache = new Set();
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (cache.has(value)) return '[Circular]';
+        cache.add(value);
+      }
+      return value;
+    }, indent);
+  } catch (e) {
+    return "[Erro ao serializar objeto]";
+  }
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -8,7 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   console.log("-----------------------------------------");
   console.log("[API Webhook] Recebido em:", new Date().toISOString());
-  console.log("[API Webhook] Payload completo:", JSON.stringify(req.body, null, 2));
+  console.log("[API Webhook] Payload completo:", safeStringify(req.body, 2));
 
   const data = req.body;
   const status = data?.status || data?.data?.status || data?.payment?.status;

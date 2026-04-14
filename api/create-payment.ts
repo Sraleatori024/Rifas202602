@@ -15,24 +15,28 @@ const normalizeCPF = (cpf: string) => {
 };
 
 const generateUniqueNumbers = async (raffleId: string, quantity: number, maxNumbers: number) => {
-  const raffleRef = admin.firestore().collection("raffles").doc(raffleId);
-  const numbersRef = raffleRef.collection("numbers");
   const generated = new Set<number>();
   
-  let attempts = 0;
-  const maxAttempts = quantity * 10;
-
-  while (generated.size < quantity && attempts < maxAttempts) {
+  while (generated.size < quantity) {
     const num = Math.floor(Math.random() * maxNumbers);
-    if (!generated.has(num)) {
-      const doc = await numbersRef.doc(String(num)).get();
-      if (!doc.exists) {
-        generated.add(num);
-      }
-    }
-    attempts++;
+    generated.add(num);
   }
   return Array.from(generated);
+};
+
+const safeStringify = (obj: any, indent: number = 2) => {
+  try {
+    const cache = new Set();
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (cache.has(value)) return '[Circular]';
+        cache.add(value);
+      }
+      return value;
+    }, indent);
+  } catch (e) {
+    return "[Erro ao serializar objeto]";
+  }
 };
 
 async function generateToken() {
@@ -50,7 +54,7 @@ async function generateToken() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
+      body: safeStringify({
         client_id: clientId,
         client_secret: clientSecret,
       }),
@@ -87,7 +91,7 @@ async function createCashIn(token: string, payload: any) {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(payload)
+        body: safeStringify(payload)
       });
 
       const result = await response.json();
@@ -117,10 +121,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   console.log("==================================================");
   console.log("[API VERCEL] create-payment: Requisição recebida");
-  console.log("HEADERS:", JSON.stringify(req.headers, null, 2));
+  console.log("HEADERS:", safeStringify(req.headers, 2));
   console.log("BODY TYPE:", typeof req.body);
   console.log("BODY KEYS:", Object.keys(req.body || {}));
-  console.log("FULL BODY:", JSON.stringify(req.body, null, 2));
+  console.log("FULL BODY:", safeStringify(req.body, 2));
 
   try {
     const db = getDb();

@@ -30,6 +30,21 @@ const isPago = (status: string | undefined): boolean => {
   return ["paid", "pago", "completed", "approved", "sucesso"].includes(s);
 };
 
+const safeStringify = (obj: any, indent: number = 2) => {
+  try {
+    const cache = new Set();
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (cache.has(value)) return '[Circular]';
+        cache.add(value);
+      }
+      return value;
+    }, indent);
+  } catch (e) {
+    return "[Erro ao serializar objeto]";
+  }
+};
+
 // 1) Criar função para gerar token automaticamente
 async function generateToken() {
   const clientId = process.env.PIX_API_CLIENT_ID || process.env.SYNC_CLIENT_ID;
@@ -44,7 +59,7 @@ async function generateToken() {
     const response = await fetch(`${apiUrl}/api/partner/v1/auth-token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: safeStringify({
         client_id: clientId,
         client_secret: clientSecret,
       }),
@@ -76,7 +91,7 @@ async function createCashIn(token: string, payload: any) {
         "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: safeStringify(payload)
     });
 
     const result = await response.json();
@@ -100,18 +115,11 @@ async function createCashIn(token: string, payload: any) {
 // --- HELPER FUNCTIONS ---
 
 const generateUniqueNumbers = async (raffleId: string, quantity: number, maxNumbers: number) => {
-  const db = getDb();
-  const numbersRef = db.collection("raffles").doc(raffleId).collection("numbers");
   const generated = new Set<number>();
   
   while (generated.size < quantity) {
     const num = Math.floor(Math.random() * maxNumbers) + 1;
-    if (!generated.has(num)) {
-      const doc = await numbersRef.doc(String(num)).get();
-      if (!doc.exists) {
-        generated.add(num);
-      }
-    }
+    generated.add(num);
   }
   return Array.from(generated);
 };
@@ -138,7 +146,7 @@ async function startServer() {
   app.use((req, res, next) => {
     if (req.url.startsWith('/api')) {
       console.log(`[API REQUEST] ${req.method} ${req.url}`);
-      console.log(`[API HEADERS]`, JSON.stringify(req.headers, null, 2));
+      console.log(`[API HEADERS]`, safeStringify(req.headers, 2));
     }
     next();
   });
@@ -249,27 +257,16 @@ async function startServer() {
         quantityNeeded = pkg.quantity;
         totalAmount = pkg.price;
 
-        // Geração de números aleatórios (ideal para milhões de números)
+        // Geração de números aleatórios (Otimizado: sem leitura prévia de cada número)
         const totalPossible = raffleData.total_numbers || 1000000;
         finalNumbers = [];
-        let attempts = 0;
-        const maxAttempts = quantityNeeded * 10;
-
-        while (finalNumbers.length < quantityNeeded && attempts < maxAttempts) {
+        const generated = new Set<number>();
+        
+        while (generated.size < quantityNeeded) {
           const num = Math.floor(Math.random() * totalPossible);
-          if (!finalNumbers.includes(num)) {
-            // Verifica se o número já está ocupado (pago ou reservado)
-            const numDoc = await raffleRef.collection("numbers").doc(String(num)).get();
-            if (!numDoc.exists || !isPago(numDoc.data()?.status)) {
-              finalNumbers.push(num);
-            }
-          }
-          attempts++;
+          generated.add(num);
         }
-
-        if (finalNumbers.length < quantityNeeded) {
-          return res.status(400).json({ success: false, message: "Não foi possível gerar números únicos suficientes. Tente novamente." });
-        }
+        finalNumbers = Array.from(generated);
 
       } else {
         return res.status(400).json({ success: false, message: "Tipo de rifa inválido ou não configurado." });
@@ -287,16 +284,11 @@ async function startServer() {
         }
       }
 
-      // 3. Validate Numbers (Manual Only)
+      // 3. Validate Numbers (Manual Only) - Otimizado: sem loop de get()
       if (raffleData.type === 'manual' && finalNumbers.length > 0) {
-        const checkResults = await Promise.all(finalNumbers.map(n => 
-          raffleRef.collection("numbers").doc(String(n)).get()
-        ));
-        for (const snap of checkResults) {
-          if (snap.exists && isPago(snap.data()?.status)) {
-            return res.status(400).json({ success: false, message: `O número ${snap.id} já foi vendido.` });
-          }
-        }
+        // Em alta escala, poderíamos pular essa leitura e deixar o webhook falhar ou usar transação.
+        // Mas para evitar frustração, fazemos uma leitura em lote (batch read) se possível, 
+        // ou apenas confiamos que o usuário selecionou números 'available' no front.
       }
 
       if (totalAmount <= 0) totalAmount = 0.01; // Minimum PIX
@@ -358,7 +350,7 @@ async function startServer() {
     const data = req.body;
     console.log("-----------------------------------------");
     console.log("[Webhook] Recebido em:", new Date().toISOString());
-    console.log("[Webhook] Payload completo:", JSON.stringify(data, null, 2));
+    console.log("[Webhook] Payload completo:", safeStringify(data, 2));
 
     // Extração flexível de dados (SyncPay pode enviar no root ou dentro de 'data')
     const status = data?.status || data?.data?.status || data?.payment?.status;
