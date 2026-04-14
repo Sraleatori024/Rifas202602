@@ -57,7 +57,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const data = doc.data();
         if (data.numero && Array.isArray(data.numero)) {
           const status = String(data.status || "").toLowerCase();
-          if (status === "paid" || status === "pago" || status === "pending") {
+          // Mostrar apenas números com status pago/paid conforme solicitado
+          if (status === "paid" || status === "pago") {
             const rifaId = data.rifaId;
             if (rifaId && !raffleNames[rifaId]) {
               const rSnap = await db.collection("raffles").doc(rifaId).get();

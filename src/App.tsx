@@ -63,7 +63,7 @@ import {
 
 // --- Components ---
 
-const Roulette = ({ purchaseId, onResult }: { purchaseId: string, onResult: (result: any) => void }) => {
+const Roulette = ({ purchaseId, raffleId, onResult }: { purchaseId: string, raffleId: string, onResult: (result: any) => void }) => {
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<any>(null);
 
@@ -73,14 +73,14 @@ const Roulette = ({ purchaseId, onResult }: { purchaseId: string, onResult: (res
       const res = await fetch('/api/spin-roulette', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ purchaseId })
+        body: JSON.stringify({ purchaseId, raffleId })
       });
       const data = await res.json();
       if (data.success) {
-        setResult(data.result);
-        onResult(data.result);
+        setResult(data.prize);
+        onResult(data.prize);
       } else {
-        alert(data.message || "Erro ao girar roleta");
+        alert(data.error || data.message || "Erro ao girar roleta");
       }
     } catch (err) {
       alert("Erro de conexão");
@@ -436,7 +436,8 @@ const RaffleDetails = () => {
         console.log("FRONTEND: Atualização da compra detectada:", data.status);
         
         // Padronização de status: "paid" ou "pago"
-        if (isPago(data.status) || data.status === 'pago' || data.status === 'paid') {
+        const status = String(data.status || "").toLowerCase();
+        if (status === 'pago' || status === 'paid') {
           console.log("FRONTEND: Pagamento confirmado! Mudando para tela de sucesso.");
           setConfirmedPurchase({ id: docSnap.id, ...data });
           setStep(4); // 4: Success
@@ -618,9 +619,8 @@ const RaffleDetails = () => {
         });
         setStep(3);
       } else {
-        const error = await res.json();
-        console.error("FRONTEND: Erro retornado pelo servidor:", error);
-        alert(error.message || "Erro ao processar compra.");
+        console.error("FRONTEND: Erro retornado pelo servidor:", data);
+        alert(data.message || "Erro ao processar compra.");
       }
     } catch (err: any) {
       console.error("FRONTEND: Erro crítico na requisição:", err.message || String(err));
@@ -1010,15 +1010,15 @@ const RaffleDetails = () => {
                   </div>
                 </div>
 
-                {confirmedPurchase?.roulette_spin?.eligible && !confirmedPurchase?.roulette_spin?.spun && (
+                {raffle.roulette?.active && 
+                 confirmedPurchase?.roulette_eligible && 
+                 !confirmedPurchase?.roulette_spun && (
                   <div className="mb-8">
                     <Roulette 
                       purchaseId={purchaseId!} 
+                      raffleId={raffle.id}
                       onResult={(res) => {
-                        // Optional: update UI with new numbers if prize was numbers
-                        if (res.type === 'numeros') {
-                          // The numbers will appear in the next snapshot update anyway
-                        }
+                        console.log("Resultado da roleta:", res);
                       }} 
                     />
                   </div>

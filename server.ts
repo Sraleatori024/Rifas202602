@@ -462,10 +462,8 @@ async function startServer() {
       status: "paid",
       numero: finalNumbers,
       paid_at: admin.firestore.FieldValue.serverTimestamp(),
-      roulette_spin: {
-        eligible: rouletteEligible,
-        spun: false
-      }
+      roulette_eligible: rouletteEligible,
+      roulette_spun: false
     });
 
     const userPhone = normalizePhone(telefone);

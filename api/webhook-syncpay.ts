@@ -73,6 +73,8 @@ async function processPayment(docSnap: any, res: VercelResponse) {
 
   const batch = db.batch();
   const raffleRef = db.collection("raffles").doc(rifaId);
+  const raffleSnap = await raffleRef.get();
+  const raffleData = raffleSnap.exists ? raffleSnap.data() : {};
   const numbersRef = raffleRef.collection("numbers");
 
   console.log(`Webhook: Confirmando ${numero.length} números para a rifa ${rifaId}`);
@@ -101,9 +103,16 @@ async function processPayment(docSnap: any, res: VercelResponse) {
     updated_at: admin.firestore.FieldValue.serverTimestamp()
   });
 
+  let rouletteEligible = false;
+  if (raffleData.roulette?.active && valor >= (raffleData.roulette.min_purchase_value || 0)) {
+    rouletteEligible = true;
+  }
+
   batch.update(docSnap.ref, {
     status: "paid",
-    paid_at: admin.firestore.FieldValue.serverTimestamp()
+    paid_at: admin.firestore.FieldValue.serverTimestamp(),
+    roulette_eligible: rouletteEligible,
+    roulette_spun: false
   });
 
   // Associate numbers with user
