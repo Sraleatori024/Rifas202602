@@ -14,6 +14,27 @@ const normalizeCPF = (cpf: string) => {
   return clean.length === 11 ? clean : "00000000000";
 };
 
+const generateUniqueNumbers = async (raffleId: string, quantity: number, maxNumbers: number) => {
+  const raffleRef = admin.firestore().collection("raffles").doc(raffleId);
+  const numbersRef = raffleRef.collection("numbers");
+  const generated = new Set<number>();
+  
+  let attempts = 0;
+  const maxAttempts = quantity * 10;
+
+  while (generated.size < quantity && attempts < maxAttempts) {
+    const num = Math.floor(Math.random() * maxNumbers);
+    if (!generated.has(num)) {
+      const doc = await numbersRef.doc(String(num)).get();
+      if (!doc.exists) {
+        generated.add(num);
+      }
+    }
+    attempts++;
+  }
+  return Array.from(generated);
+};
+
 async function generateToken() {
   const clientId = process.env.PIX_API_CLIENT_ID || process.env.SYNC_CLIENT_ID;
   const clientSecret = process.env.PIX_API_CLIENT_SECRET || process.env.SYNC_CLIENT_SECRET;
@@ -121,17 +142,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       instagram: req.body.instagram
     };
     
-    const requestedNumbers = req.body.numero || req.body.numbers;
+    const requestedNumbers = req.body.numero || req.body.numbers || [];
     const packageId = req.body.pacote || req.body.packageId;
 
-    console.log("DADOS EXTRAÍDOS:", { raffleId, buyerName: buyer?.name, buyerPhone: buyer?.whatsapp, hasNumbers: !!requestedNumbers?.length, packageId });
+    console.log(`[PAYMENT] Nova tentativa de compra: Rifa ${raffleId} | Cliente: ${buyer?.name}`);
 
-    if (!raffleId || (!requestedNumbers?.length && !packageId) || !buyer || !buyer.whatsapp || !buyer.name) {
-      console.warn("[API VERCEL] Dados incompletos.");
+    if (!raffleId || (requestedNumbers.length === 0 && !packageId) || !buyer?.whatsapp || !buyer?.name) {
       return res.status(400).json({ 
         success: false, 
-        code: "DADOS_INCOMPLETOS",
-        message: "Dados incompletos (Nome, WhatsApp e Números/Pacote são obrigatórios)" 
+        message: "Dados incompletos para processar o pagamento." 
       });
     }
 
@@ -166,29 +185,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let finalNumbers: number[] = [];
     let quantityNeeded = 0;
 
-    // 2. Identify Numbers and Calculate Price
-    if (packageId) {
-      const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
-      if (!pkg) {
-        return res.status(400).json({ success: false, message: "Pacote não encontrado." });
-      }
-      quantityNeeded = pkg.quantity;
-      totalAmount = pkg.price;
+    // --- VALIDAÇÃO DE TIPO E ENTRADA ---
+    const raffleType = raffleData.type || 'manual';
+    const isManual = raffleType === 'manual';
+    const isAutomatic = raffleType === 'automatic';
 
-      // Find available numbers (Fast query)
-      const availableSnap = await raffleRef.collection("numbers")
-        .where("status", "==", "disponivel")
-        .limit(quantityNeeded)
-        .get();
+    // 1. Impedir envio de ambos ao mesmo tempo
+    if (requestedNumbers.length > 0 && packageId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Não é permitido enviar números e pacotes simultaneamente. Escolha apenas um modo." 
+      });
+    }
 
-      if (availableSnap.size < quantityNeeded) {
-        return res.status(400).json({ success: false, message: "Não há números disponíveis suficientes para este pacote." });
+    // 2. Lógica Específica por Tipo de Rifa
+    if (isManual) {
+      // Rifa Manual: DEVE ter números, NÃO PODE ter pacote
+      if (packageId) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Rifas manuais não aceitam pacotes. Selecione os números individualmente." 
+        });
       }
-      finalNumbers = availableSnap.docs.map(d => d.data().number);
-    } else {
-      const unitPrice = raffleData.price || 0;
+      if (requestedNumbers.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Selecione ao menos um número para continuar." 
+        });
+      }
+
       quantityNeeded = requestedNumbers.length;
-      totalAmount = quantityNeeded * unitPrice;
+      totalAmount = quantityNeeded * (raffleData.price || 0);
       finalNumbers = requestedNumbers;
 
       // Quick check for sold numbers (Parallel queries)
@@ -200,7 +227,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const checkResults = await Promise.all(chunks.map(chunk => 
         raffleRef.collection("numbers")
           .where("number", "in", chunk)
-          .where("status", "in", ["pago", "confirmed"])
+          .where("status", "in", ["pago", "confirmed", "paid"])
           .limit(1)
           .get()
       ));
@@ -213,6 +240,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
       }
+
+    } else if (isAutomatic) {
+      // Rifa Automática: DEVE ter pacote, IGNORA números manuais
+      if (!packageId) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Rifas automáticas exigem a seleção de um pacote." 
+        });
+      }
+      if (requestedNumbers.length > 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Rifas automáticas não permitem seleção manual de números." 
+        });
+      }
+
+      const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
+      if (!pkg) {
+        return res.status(400).json({ success: false, message: "Pacote não encontrado." });
+      }
+      
+      quantityNeeded = pkg.quantity;
+      totalAmount = pkg.price;
+
+      // Geração de números aleatórios (ideal para milhões de números)
+      finalNumbers = await generateUniqueNumbers(raffleId, quantityNeeded, raffleData.total_numbers || 1000000);
+
+      if (finalNumbers.length < quantityNeeded) {
+        return res.status(400).json({ success: false, message: "Não foi possível gerar números únicos suficientes. Tente novamente." });
+      }
+
+    } else {
+      return res.status(400).json({ success: false, message: "Tipo de rifa inválido ou não configurado." });
     }
 
     if (totalAmount <= 0) {
@@ -290,7 +350,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cpf: payload.client.cpf,
       pix_code: pix_code,
       identifier: identifier,
-      status: "criada",
+      status: "pending",
       numero: finalNumbers,
       rifaId: raffleId,
       valor: totalAmount,

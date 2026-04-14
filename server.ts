@@ -154,12 +154,6 @@ async function startServer() {
 
   // Create Payment (SyncPay PIX)
   app.post("/api/create-payment", async (req, res) => {
-    console.log("==================================================");
-    console.log("EXPRESS BACKEND: /api/create-payment");
-    console.log("BODY TYPE:", typeof req.body);
-    console.log("BODY KEYS:", Object.keys(req.body || {}));
-    console.log("FULL BODY:", JSON.stringify(req.body, null, 2));
-    
     const raffleId = req.body.rifaId || req.body.raffleId;
     const buyer = req.body.buyer || {
       name: req.body.nome || req.body.name,
@@ -168,18 +162,15 @@ async function startServer() {
       instagram: req.body.instagram
     };
     
-    const requestedNumbers = req.body.numero || req.body.numbers;
+    const requestedNumbers = req.body.numero || req.body.numbers || [];
     const pkgInfo = req.body.pacote || req.body.packageId;
     
-    console.log("DADOS EXTRAÍDOS:", { raffleId, buyerName: buyer?.name, buyerPhone: buyer?.whatsapp, hasNumbers: !!requestedNumbers?.length, pkgInfo });
+    console.log(`[PAYMENT] Nova tentativa de compra: Rifa ${raffleId} | Cliente: ${buyer?.name}`);
 
-    // Validação básica
-    if (!raffleId || (!requestedNumbers?.length && !pkgInfo) || !buyer || !buyer.whatsapp || !buyer.name) {
-      console.warn("BACKEND: Dados incompletos detectados.");
+    if (!raffleId || (requestedNumbers.length === 0 && !pkgInfo) || !buyer?.whatsapp || !buyer?.name) {
       return res.status(400).json({ 
         success: false, 
-        code: "DADOS_INCOMPLETOS",
-        message: "Dados incompletos (Nome, WhatsApp e Números/Pacote são obrigatórios)" 
+        message: "Dados incompletos para processar o pagamento." 
       });
     }
 
@@ -198,35 +189,90 @@ async function startServer() {
       let quantityNeeded = 0;
       let bonusNumbers = 0;
 
-      // 1. Identificar Números ou Pacote e Calcular Preço
-      if (pkgInfo) {
-        if (typeof pkgInfo === 'string') {
-          // Caso seja um ID de pacote (sistema atual)
-          const pkg = (raffleData.packages || []).find((p: any) => p.id === pkgInfo);
-          if (!pkg) return res.status(400).json({ success: false, message: "Pacote não encontrado." });
-          quantityNeeded = pkg.quantity;
-          totalAmount = pkg.price;
-        } else if (typeof pkgInfo === 'object') {
-          // Caso seja um objeto com quantidade e preço (novo requisito)
-          quantityNeeded = pkgInfo.quantidade || pkgInfo.quantity || 0;
-          totalAmount = pkgInfo.preco || pkgInfo.price || 0;
-          
-          if (quantityNeeded <= 0) {
-            return res.status(400).json({ success: false, message: "Quantidade do pacote inválida." });
-          }
-        } else {
-          return res.status(400).json({ success: false, message: "Formato de pacote inválido." });
+      // --- VALIDAÇÃO DE TIPO E ENTRADA ---
+      const raffleType = raffleData.type || 'manual';
+      const isManual = raffleType === 'manual';
+      const isAutomatic = raffleType === 'automatic';
+
+      // 1. Impedir envio de ambos ao mesmo tempo
+      if (requestedNumbers.length > 0 && pkgInfo) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Não é permitido enviar números e pacotes simultaneamente. Escolha apenas um modo." 
+        });
+      }
+
+      // 2. Lógica Específica por Tipo de Rifa
+      if (isManual) {
+        // Rifa Manual: DEVE ter números, NÃO PODE ter pacote
+        if (pkgInfo) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "Rifas manuais não aceitam pacotes. Selecione os números individualmente." 
+          });
         }
-      } else if (requestedNumbers && Array.isArray(requestedNumbers)) {
-        // Caso seja seleção manual de números
-        if (raffleData.type === 'automatic') {
-          return res.status(400).json({ success: false, message: "Esta rifa aceita apenas pacotes (números automáticos)." });
+        if (requestedNumbers.length === 0) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "Selecione ao menos um número para continuar." 
+          });
         }
+
         quantityNeeded = requestedNumbers.length;
         totalAmount = quantityNeeded * (raffleData.price || 0);
         finalNumbers = requestedNumbers;
+
+      } else if (isAutomatic) {
+        // Rifa Automática: DEVE ter pacote, IGNORA números manuais
+        if (!pkgInfo) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "Rifas automáticas exigem a seleção de um pacote." 
+          });
+        }
+        if (requestedNumbers.length > 0) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "Rifas automáticas não permitem seleção manual de números." 
+          });
+        }
+
+        let pkg;
+        if (typeof pkgInfo === 'string') {
+          pkg = (raffleData.packages || []).find((p: any) => p.id === pkgInfo);
+        } else if (typeof pkgInfo === 'object') {
+          pkg = { quantity: pkgInfo.quantidade || pkgInfo.quantity, price: pkgInfo.preco || pkgInfo.price };
+        }
+
+        if (!pkg) return res.status(400).json({ success: false, message: "Pacote não encontrado." });
+        
+        quantityNeeded = pkg.quantity;
+        totalAmount = pkg.price;
+
+        // Geração de números aleatórios (ideal para milhões de números)
+        const totalPossible = raffleData.total_numbers || 1000000;
+        finalNumbers = [];
+        let attempts = 0;
+        const maxAttempts = quantityNeeded * 10;
+
+        while (finalNumbers.length < quantityNeeded && attempts < maxAttempts) {
+          const num = Math.floor(Math.random() * totalPossible);
+          if (!finalNumbers.includes(num)) {
+            // Verifica se o número já está ocupado (pago ou reservado)
+            const numDoc = await raffleRef.collection("numbers").doc(String(num)).get();
+            if (!numDoc.exists || !isPago(numDoc.data()?.status)) {
+              finalNumbers.push(num);
+            }
+          }
+          attempts++;
+        }
+
+        if (finalNumbers.length < quantityNeeded) {
+          return res.status(400).json({ success: false, message: "Não foi possível gerar números únicos suficientes. Tente novamente." });
+        }
+
       } else {
-        return res.status(400).json({ success: false, message: "Nenhum número ou pacote selecionado." });
+        return res.status(400).json({ success: false, message: "Tipo de rifa inválido ou não configurado." });
       }
 
       // 2. Apply Promotions
@@ -284,7 +330,7 @@ async function startServer() {
         cpf: normalizeCPF(buyer.cpf),
         pix_code: pix_code,
         identifier: identifier,
-        status: "criada",
+        status: "pending",
         numero: finalNumbers, // Empty for automatic, filled later
         quantity: quantityNeeded + bonusNumbers,
         rifaId: raffleId,

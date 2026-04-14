@@ -423,6 +423,43 @@ const RaffleDetails = () => {
     };
   }, [raffleId]);
 
+  // Listener em tempo real para o status do pagamento
+  useEffect(() => {
+    if (!purchaseId) return;
+
+    console.log(`FRONTEND: Iniciando listener para compra ${purchaseId}`);
+    const purchaseRef = doc(db, "compras", purchaseId);
+    
+    const unsub = onSnapshot(purchaseRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("FRONTEND: Atualização da compra detectada:", data.status);
+        
+        // Padronização de status: "paid" ou "pago"
+        if (isPago(data.status) || data.status === 'pago' || data.status === 'paid') {
+          console.log("FRONTEND: Pagamento confirmado! Mudando para tela de sucesso.");
+          setConfirmedPurchase({ id: docSnap.id, ...data });
+          setStep(4); // 4: Success
+          
+          // Salva no histórico local
+          saveToLocalStorage({
+            id: docSnap.id,
+            rifaId: data.rifaId,
+            nome: data.nome,
+            status: data.status,
+            numero: data.numero,
+            valor: data.valor,
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString()
+          });
+        }
+      }
+    }, (error) => {
+      console.error("Erro ao escutar status da compra:", error);
+    });
+
+    return () => unsub();
+  }, [purchaseId]);
+
   // Function to save purchase to localStorage
   const saveToLocalStorage = (purchase: any) => {
     try {
@@ -492,15 +529,19 @@ const RaffleDetails = () => {
 
   const handleSelectPackage = (pkg: any) => {
     setSelectedPackage(pkg);
-    // Select random numbers for the package
-    const available = numbers
-      .filter(n => n.status === 'available')
-      .map(n => n.number);
-    
-    const shuffled = available.sort(() => 0.5 - Math.random());
-    const newSelection = shuffled.slice(0, pkg.quantity);
-    
-    setSelectedNumbers(newSelection);
+    // Para rifas automáticas, não selecionamos números no frontend
+    if (raffle?.type === 'manual') {
+      const available = numbers
+        .filter(n => n.status === 'available')
+        .map(n => n.number);
+      
+      const shuffled = available.sort(() => 0.5 - Math.random());
+      const newSelection = shuffled.slice(0, pkg.quantity);
+      
+      setSelectedNumbers(newSelection);
+    } else {
+      setSelectedNumbers([]);
+    }
   };
 
   const selectRandom = (count: number) => {
@@ -540,7 +581,7 @@ const RaffleDetails = () => {
       cpf: String(buyerInfo.cpf || ''),
       instagram: String(buyerInfo.instagram || ''),
       numero: raffle?.type === 'manual' ? [...selectedNumbers] : [],
-      pacote: selectedPackage?.id ? String(selectedPackage.id) : undefined
+      pacote: raffle?.type === 'automatic' ? (selectedPackage?.id ? String(selectedPackage.id) : undefined) : undefined
     };
 
     console.log("==================================================");
@@ -717,7 +758,7 @@ const RaffleDetails = () => {
           )}
 
           {/* Packages Section */}
-          {raffle.packages && raffle.packages.filter(p => p.active).length > 0 && step === 1 && (
+          {raffle.type === 'automatic' && raffle.packages && raffle.packages.filter(p => p.active).length > 0 && step === 1 && (
             <div className="space-y-4 mb-8">
               <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                 <Package className="text-primary" />
@@ -2999,10 +3040,24 @@ export default function App() {
                                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{purchase.raffleName}</p>
                                 </div>
                                 <div className="text-right">
-                                  <span className="px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1 bg-emerald-100 text-emerald-700">
-                                    PAGO
+                                  <span className={cn(
+                                    "px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1",
+                                    isPago(purchase.status) ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                                  )}>
+                                    {isPago(purchase.status) ? "PAGO" : "PENDENTE"}
                                   </span>
                                   <p className="text-[10px] font-bold text-slate-400">{purchase.numbers.length} números</p>
+                                  {!isPago(purchase.status) && purchase.pix_code && (
+                                    <button 
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(purchase.pix_code);
+                                        alert("Código PIX copiado!");
+                                      }}
+                                      className="block text-[10px] font-black text-amber-600 hover:underline uppercase tracking-widest mt-1"
+                                    >
+                                      Copiar PIX
+                                    </button>
+                                  )}
                                   <button 
                                     onClick={() => {
                                       navigator.clipboard.writeText(purchase.numbers.join(', '));
@@ -3010,13 +3065,18 @@ export default function App() {
                                     }}
                                     className="block text-[10px] font-black text-primary hover:underline uppercase tracking-widest mt-1"
                                   >
-                                    Copiar Tudo
+                                    Copiar Números
                                   </button>
                                 </div>
                               </div>
                               <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 pt-2 border-t border-slate-50">
                                 {purchase.numbers.map((n: number) => (
-                                  <div key={n} className="aspect-square flex items-center justify-center bg-emerald-50 text-emerald-700 text-xs font-black rounded-xl border border-emerald-100 shadow-sm hover:bg-emerald-100 transition-colors">
+                                  <div key={n} className={cn(
+                                    "aspect-square flex items-center justify-center text-xs font-black rounded-xl border shadow-sm transition-colors",
+                                    isPago(purchase.status) 
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100" 
+                                      : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100"
+                                  )}>
                                     {n.toString().padStart(2, '0')}
                                   </div>
                                 ))}

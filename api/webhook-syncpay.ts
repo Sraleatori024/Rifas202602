@@ -84,14 +84,14 @@ async function processPayment(docSnap: any, res: VercelResponse) {
   }
 
   for (const chunk of numbersChunks) {
-    const selectedNumbersSnap = await numbersRef.where("number", "in", chunk).get();
-    for (const docSnap of selectedNumbersSnap.docs) {
-      batch.update(docSnap.ref, {
+    for (const num of chunk) {
+      batch.set(numbersRef.doc(String(num)), {
+        number: Number(num),
         status: 'pago',
         buyer_name: nome,
         buyer_whatsapp: telefone,
         updated_at: admin.firestore.FieldValue.serverTimestamp()
-      });
+      }, { merge: true });
     }
   }
 

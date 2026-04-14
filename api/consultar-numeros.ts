@@ -56,7 +56,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const data = doc.data();
         if (data.numero && Array.isArray(data.numero)) {
-          if (data.status === "paid" || data.status === "pago") {
+          const status = String(data.status || "").toLowerCase();
+          if (status === "paid" || status === "pago" || status === "pending") {
             const rifaId = data.rifaId;
             if (rifaId && !raffleNames[rifaId]) {
               const rSnap = await db.collection("raffles").doc(rifaId).get();
@@ -67,7 +68,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             
             confirmedNumbers.push({
               raffleName: raffleNames[rifaId] || "Rifa",
-              numbers: data.numero
+              numbers: data.numero,
+              status: status,
+              pix_code: data.pix_code
             });
           }
         }
