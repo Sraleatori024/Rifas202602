@@ -14,6 +14,7 @@ import {
   ChevronRight,
   CheckCircle2,
   AlertCircle,
+  ShieldCheck,
   Menu,
   X,
   Instagram,
@@ -35,6 +36,15 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { cn, User, Raffle, RaffleNumber, Winner, isPago } from './types';
+import { 
+  TermosDeUso, 
+  PoliticaPrivacidade, 
+  PoliticaPagamentos, 
+  RegrasCampanha, 
+  PoliticaCookies, 
+  PerguntasFrequentes, 
+  Contato 
+} from './components/LegalPages';
 import { auth, db } from './firebase';
 import { 
   signInWithEmailAndPassword, 
@@ -150,9 +160,14 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
               <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
                 <Ticket className="text-white w-6 h-6" />
               </div>
-              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-600">
-                Rifa Alice
-              </span>
+              <div className="flex flex-col">
+                <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-600 tracking-tight leading-none">
+                  Chance Club
+                </span>
+                <span className="text-[9px] font-bold text-slate-400 tracking-tight uppercase mt-0.5">
+                  Participações em campanhas especiais
+                </span>
+              </div>
             </Link>
           </div>
 
@@ -2827,6 +2842,24 @@ export default function App() {
   const [consultResult, setConsultResult] = useState<any>(null);
   const [consulting, setConsulting] = useState(false);
 
+  // Terms Acceptance States
+  const [showFirstVisitModal, setShowFirstVisitModal] = useState(false);
+  const [modalAcceptedChecked, setModalAcceptedChecked] = useState(false);
+
+  useEffect(() => {
+    const accepted = localStorage.getItem('chance_club_terms_accepted');
+    if (!accepted) {
+      setShowFirstVisitModal(true);
+    }
+  }, []);
+
+  const handleAcceptTerms = () => {
+    if (modalAcceptedChecked) {
+      localStorage.setItem('chance_club_terms_accepted', 'true');
+      setShowFirstVisitModal(false);
+    }
+  };
+
   const handleConsult = async (e: React.FormEvent) => {
     e.preventDefault();
     setConsulting(true);
@@ -2927,17 +2960,75 @@ export default function App() {
               path="/admin" 
               element={user?.role === 'admin' ? <AdminDashboard /> : <Navigate to="/admin/login" />} 
             />
+            {/* Legal Pages Routes */}
+            <Route path="/termos" element={<TermosDeUso />} />
+            <Route path="/privacidade" element={<PoliticaPrivacidade />} />
+            <Route path="/cookies" element={<PoliticaCookies />} />
+            <Route path="/pagamentos" element={<PoliticaPagamentos />} />
+            <Route path="/regras" element={<RegrasCampanha />} />
+            <Route path="/faq" element={<PerguntasFrequentes />} />
+            <Route path="/contato" element={<Contato />} />
           </Routes>
         </main>
 
-        <footer className="bg-white border-t border-slate-100 py-12">
-          <div className="max-w-7xl mx-auto px-4 text-center">
-            <div className="flex justify-center space-x-6 mb-8">
-              <a href="#" className="text-slate-400 hover:text-primary transition-colors"><Instagram /></a>
-              <a href="#" className="text-slate-400 hover:text-primary transition-colors"><Phone /></a>
+        <footer className="bg-slate-900 text-slate-300 border-t border-slate-800 pt-16 pb-12 mt-auto">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
+              <div className="space-y-4 md:col-span-1">
+                <Link to="/" className="flex items-center space-x-2">
+                  <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
+                    <Ticket className="text-white w-6 h-6" />
+                  </div>
+                  <span className="text-xl font-black text-white tracking-tight">
+                    Chance Club
+                  </span>
+                </Link>
+                <p className="text-xs text-slate-400">
+                  Participações em campanhas promocionais especiais de forma simples, transparente e segura.
+                </p>
+                <div className="flex space-x-4 pt-2">
+                  <a href="#" className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-primary hover:text-white transition-all"><Instagram className="w-4 h-4" /></a>
+                  <a href="#" className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-primary hover:text-white transition-all"><Phone className="w-4 h-4" /></a>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Campanhas</h4>
+                <ul className="space-y-2 text-sm font-semibold">
+                  <li><Link to="/" className="hover:text-white transition-colors">Ver Campanhas</Link></li>
+                  <li><Link to="/regras" className="hover:text-white transition-colors">Regras da Campanha</Link></li>
+                  <li><button onClick={() => setShowConsult(true)} className="hover:text-white transition-colors">Meus Números</button></li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Legal</h4>
+                <ul className="space-y-2 text-sm font-semibold">
+                  <li><Link to="/termos" className="hover:text-white transition-colors">Termos de Uso</Link></li>
+                  <li><Link to="/privacidade" className="hover:text-white transition-colors">Política de Privacidade</Link></li>
+                  <li><Link to="/cookies" className="hover:text-white transition-colors">Política de Cookies</Link></li>
+                  <li><Link to="/pagamentos" className="hover:text-white transition-colors">Política de Pagamentos</Link></li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Suporte</h4>
+                <ul className="space-y-2 text-sm font-semibold">
+                  <li><Link to="/faq" className="hover:text-white transition-colors">Perguntas Frequentes</Link></li>
+                  <li><Link to="/contato" className="hover:text-white transition-colors">Fale Conosco</Link></li>
+                  <li><Link to="/admin/login" className="text-slate-500 hover:text-white transition-colors text-xs">Área Administrativa</Link></li>
+                </ul>
+              </div>
             </div>
-            <p className="text-slate-500 text-sm">© 2026 Rifa Alice. Todos os direitos reservados.</p>
-            <p className="text-slate-400 text-xs mt-2">Sistema profissional de rifas online.</p>
+
+            <div className="border-t border-slate-800 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+              <p className="text-xs text-slate-500">
+                © {new Date().getFullYear()} Chance Club. Todos os direitos reservados.
+              </p>
+              <p className="text-[10px] text-slate-600 max-w-md text-center md:text-right leading-relaxed">
+                O Chance Club promove campanhas e concursos estritamente sob as regras da legislação vigente. A participação implica aceitação plena de nossos termos comerciais e regras de faturamento.
+              </p>
+            </div>
           </div>
         </footer>
       </div>
@@ -3136,6 +3227,82 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      
+      {/* First Visit Legal Terms Modal */}
+      <AnimatePresence>
+        {showFirstVisitModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100"
+            >
+              {/* Header Pattern */}
+              <div className="bg-gradient-to-br from-primary to-blue-600 p-8 text-white text-center relative overflow-hidden">
+                <div className="absolute right-0 bottom-0 translate-x-1/3 translate-y-1/3 opacity-10">
+                  <ShieldCheck className="w-64 h-64" />
+                </div>
+                <div className="relative z-10">
+                  <div className="w-16 h-16 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/10">
+                    <ShieldCheck className="w-8 h-8 text-white" />
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl font-black tracking-tight">Bem-vindo à Chance Premiada</h2>
+                  <p className="text-white/80 text-sm font-semibold mt-2">Sua segurança e transparência em primeiro lugar</p>
+                </div>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-8 sm:p-10 space-y-6">
+                <p className="text-slate-600 text-sm sm:text-base font-medium leading-relaxed text-center">
+                  Antes de continuar, leia e aceite nossos Termos de Uso e Política de Privacidade.
+                </p>
+
+                {/* Checklist Container */}
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input 
+                      type="checkbox"
+                      checked={modalAcceptedChecked}
+                      onChange={(e) => setModalAcceptedChecked(e.target.checked)}
+                      className="w-5 h-5 rounded-md border-slate-300 text-primary focus:ring-primary/20 mt-0.5 accent-primary cursor-pointer"
+                    />
+                    <span className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed">
+                      Li e concordo com os{' '}
+                      <Link to="/termos" target="_blank" className="text-primary hover:underline font-black inline">Termos de Uso</Link>
+                      ,{' '}
+                      <Link to="/privacidade" target="_blank" className="text-primary hover:underline font-black inline">Política de Privacidade</Link>
+                      ,{' '}
+                      <Link to="/pagamentos" target="_blank" className="text-primary hover:underline font-black inline">Política de Pagamentos</Link>
+                      {' '}e{' '}
+                      <Link to="/regras" target="_blank" className="text-primary hover:underline font-black inline">Regras da Campanha</Link>
+                      .
+                    </span>
+                  </label>
+                </div>
+
+                {/* Footer Info & Action */}
+                <div className="space-y-4 pt-2">
+                  <button
+                    onClick={handleAcceptTerms}
+                    disabled={!modalAcceptedChecked}
+                    className="w-full bg-primary text-white py-5 rounded-2xl font-black text-lg sm:text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
+                  >
+                    <span>Aceitar e Continuar</span>
+                  </button>
+                  <p className="text-[10px] text-slate-400 font-mono text-center">
+                    Plataforma Oficial Chance Club • Todos os direitos reservados.
+                  </p>
+                </div>
               </div>
             </motion.div>
           </div>
