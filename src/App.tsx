@@ -86,6 +86,19 @@ const safeStringify = (obj: any, indent = 2) => {
   }
 };
 
+const formatConfirmDate = (paidAt: any) => {
+  if (!paidAt) return new Date().toLocaleString('pt-BR');
+  let d: Date;
+  if (paidAt.toDate) {
+    d = paidAt.toDate();
+  } else if (paidAt.seconds) {
+    d = new Date(paidAt.seconds * 1000);
+  } else {
+    d = new Date(paidAt);
+  }
+  return d.toLocaleString('pt-BR');
+};
+
 // --- Components ---
 
 // --- Components ---
@@ -459,38 +472,41 @@ const RaffleDetails = () => {
   useEffect(() => {
     if (!purchaseId) return;
 
-    console.log(`FRONTEND: Iniciando listener para compra ${purchaseId}`);
+    console.log(`FRONTEND: Iniciando monitoramento em tempo real para a compra: ${purchaseId}`);
     const purchaseRef = doc(db, "compras", purchaseId);
     
     const unsub = onSnapshot(purchaseRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        console.log("FRONTEND: Atualização da compra detectada:", data.status);
+        console.log("FRONTEND: Atualização de status detectada:", data.status);
         
-        // Padronização de status: "paid" ou "pago"
-        const status = String(data.status || "").toLowerCase();
-        if (status === 'pago' || status === 'paid') {
-          console.log("FRONTEND: Pagamento confirmado! Mudando para tela de sucesso.");
+        if (isPago(data.status)) {
+          console.log("FRONTEND: Pagamento CONFIRMADO via Firestore!");
           setConfirmedPurchase({ id: docSnap.id, ...data });
-          setStep(4); // 4: Success
           
           // Salva no histórico local
           saveToLocalStorage({
-            id: docSnap.id,
-            rifaId: data.rifaId,
-            nome: data.nome,
-            status: data.status,
-            numero: data.numero,
-            valor: data.valor,
-            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString()
+            raffleId: data.rifaId,
+            numbers: data.numero,
+            buyer: data.nome,
+            status: 'paid',
+            date: new Date().toISOString()
           });
+          
+          // Muda para a tela de sucesso
+          setStep(4);
         }
+      } else {
+        console.warn("Aguardando criação do documento da compra...");
       }
     }, (error) => {
-      console.error("Erro ao escutar status da compra:", safeStringify(error));
+      console.error("Erro ao escutar status da compra:", error.message || String(error));
     });
 
-    return () => unsub();
+    return () => {
+      console.log("Encerrando monitoramento da compra:", purchaseId);
+      unsub();
+    };
   }, [purchaseId]);
 
   // Function to save purchase to localStorage
@@ -511,45 +527,6 @@ const RaffleDetails = () => {
       console.error("Erro ao salvar no localStorage:", e.message || String(e));
     }
   };
-
-  useEffect(() => {
-    if (!purchaseId) return;
-    
-    console.log("Iniciando monitoramento em tempo real da compra:", purchaseId);
-    
-    const unsub = onSnapshot(doc(db, "compras", purchaseId), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        console.log("Atualização de status detectada:", data.status);
-        
-        if (isPago(data.status)) {
-          console.log("Pagamento CONFIRMADO via Firestore!");
-          setConfirmedPurchase(data);
-          
-          // Salva no histórico local
-          saveToLocalStorage({
-            raffleId: data.rifaId,
-            numbers: data.numero,
-            buyer: data.nome,
-            status: 'paid',
-            date: new Date().toISOString()
-          });
-          
-          // Muda para a tela de sucesso
-          setStep(4);
-        }
-      } else {
-        console.warn("Aguardando criação do documento da compra...");
-      }
-    }, (error) => {
-      console.error("Erro ao monitorar compra:", error.message || String(error));
-    });
-
-    return () => {
-      console.log("Encerrando monitoramento da compra:", purchaseId);
-      unsub();
-    };
-  }, [purchaseId]);
 
   const isNumberAvailable = (n: RaffleNumber) => {
     if (n.status === 'available') return true;
@@ -1102,6 +1079,12 @@ const RaffleDetails = () => {
               className="card p-12 text-center relative overflow-hidden"
             >
               <div className="relative z-10">
+                {/* Painel/Card de Confirmação com status e ícone de sucesso */}
+                <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-black tracking-wider uppercase">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  ✔️ Pagamento Concluído
+                </div>
+
                 <motion.div 
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
@@ -1111,15 +1094,46 @@ const RaffleDetails = () => {
                   <CheckCircle2 className="w-14 h-14" />
                 </motion.div>
                 
-                <h3 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tight">Pagamento confirmado! 🍀</h3>
-                <p className="text-xl text-slate-600 mb-8 font-medium">
+                <h3 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tight">✅ Pagamento confirmado com sucesso!</h3>
+                <p className="text-sm text-slate-600 mb-8 max-w-lg mx-auto leading-relaxed">
                   {confirmedPurchase?.nome ? `Boa sorte, ${confirmedPurchase.nome}! ` : "Boa sorte! "}
-                  Seus números já estão garantidos.
+                  Sua compra foi registrada com sucesso. Seus números já estão garantidos e participam do sorteio.
                 </p>
+
+                {/* Grid de Detalhes da Compra / Recibo */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl mx-auto mb-8 text-left">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Identificador da Transação</p>
+                    <p className="font-mono text-xs text-slate-800 break-all select-all font-semibold">
+                      {confirmedPurchase?.identifier || confirmedPurchase?.id || purchaseId}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Data e Hora da Confirmação</p>
+                    <p className="font-bold text-sm text-slate-800">
+                      {formatConfirmDate(confirmedPurchase?.paid_at || confirmedPurchase?.createdAt)}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Valor Pago</p>
+                    <p className="font-black text-lg text-emerald-600">
+                      R$ {confirmedPurchase ? (typeof confirmedPurchase.valor === 'number' ? confirmedPurchase.valor : Number(confirmedPurchase.valor || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Cliente</p>
+                    <p className="font-bold text-sm text-slate-800 truncate">
+                      {confirmedPurchase?.nome || "Cliente"}
+                    </p>
+                  </div>
+                </div>
                 
-                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-8">
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números Pagos</p>
-                  <div className="flex flex-wrap justify-center gap-2">
+                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-8 max-w-xl mx-auto">
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Seus Números Garantidos</p>
+                  <div className="flex flex-wrap justify-center gap-2 max-h-48 overflow-y-auto p-1">
                     {(confirmedPurchase?.numero || selectedNumbers).map((n: number) => (
                       <span key={n} className="w-12 h-12 bg-white border-2 border-emerald-500 text-emerald-600 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm">
                         {n.toString().padStart(2, '0')}
