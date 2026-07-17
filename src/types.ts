@@ -91,8 +91,9 @@ export interface RaffleNumber {
   id: number;
   raffle_id: number;
   number: number;
-  status: 'available' | 'pago';
+  status: 'available' | 'reserved' | 'pago';
   buyer_name?: string;
   buyer_whatsapp?: string;
   buyer_instagram?: string;
+  expires_at?: any;
 }

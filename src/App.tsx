@@ -551,6 +551,18 @@ const RaffleDetails = () => {
     };
   }, [purchaseId]);
 
+  const isNumberAvailable = (n: RaffleNumber) => {
+    if (n.status === 'available') return true;
+    if (n.status === 'reserved') {
+      if (!n.expires_at) return true;
+      const expiry = typeof n.expires_at === 'string' 
+        ? new Date(n.expires_at) 
+        : (n.expires_at?.toDate ? n.expires_at.toDate() : new Date(n.expires_at));
+      return expiry < new Date();
+    }
+    return false;
+  };
+
   const toggleNumber = (num: number) => {
     setSelectedPackage(null); // Clear package if manual selection
     if (selectedNumbers.includes(num)) {
@@ -562,31 +574,68 @@ const RaffleDetails = () => {
 
   const handleSelectPackage = (pkg: any) => {
     setSelectedPackage(pkg);
-    // Para rifas automáticas, não selecionamos números no frontend
-    if (raffle?.type === 'manual') {
-      const available = numbers
-        .filter(n => n.status === 'available')
-        .map(n => n.number);
-      
-      const shuffled = available.sort(() => 0.5 - Math.random());
-      const newSelection = shuffled.slice(0, pkg.quantity);
-      
-      setSelectedNumbers(newSelection);
-    } else {
-      setSelectedNumbers([]);
+    const available = numbers
+      .filter(n => isNumberAvailable(n))
+      .map(n => n.number);
+    
+    if (available.length < pkg.quantity) {
+      alert("Não há números suficientes disponíveis na rifa para preencher este pacote.");
+      return;
     }
+    
+    const shuffled = available.sort(() => 0.5 - Math.random());
+    const newSelection = shuffled.slice(0, pkg.quantity);
+    
+    setSelectedNumbers(newSelection);
   };
 
   const selectRandom = (count: number) => {
     setSelectedPackage(null); // Clear package if random selection
     const available = numbers
-      .filter(n => n.status === 'available' && !selectedNumbers.includes(n.number))
+      .filter(n => isNumberAvailable(n) && !selectedNumbers.includes(n.number))
       .map(n => n.number);
+    
+    if (available.length < count) {
+      alert("Não há números disponíveis suficientes na rifa.");
+      return;
+    }
     
     const shuffled = available.sort(() => 0.5 - Math.random());
     const newSelection = shuffled.slice(0, count);
     
     setSelectedNumbers(prev => [...prev, ...newSelection]);
+  };
+
+  const regenerateNumbers = () => {
+    const quantity = selectedPackage ? selectedPackage.quantity : selectedNumbers.length;
+    if (quantity <= 0) return;
+    
+    const available = numbers
+      .filter(n => isNumberAvailable(n))
+      .map(n => n.number);
+      
+    if (available.length < quantity) {
+      alert("Não há números disponíveis suficientes na rifa.");
+      return;
+    }
+    
+    const shuffled = available.sort(() => 0.5 - Math.random());
+    const newSelection = shuffled.slice(0, quantity);
+    setSelectedNumbers(newSelection);
+  };
+
+  const removeAndReplaceNumber = (numToRemove: number) => {
+    const available = numbers
+      .filter(n => isNumberAvailable(n) && !selectedNumbers.includes(n.number))
+      .map(n => n.number);
+      
+    if (available.length > 0) {
+      const newNum = available[Math.floor(Math.random() * available.length)];
+      setSelectedNumbers(prev => prev.map(n => n === numToRemove ? newNum : n));
+    } else {
+      setSelectedNumbers(prev => prev.filter(n => n !== numToRemove));
+      setSelectedPackage(null);
+    }
   };
 
   const handlePurchase = async () => {
@@ -597,13 +646,8 @@ const RaffleDetails = () => {
       return;
     }
 
-    if (raffle?.type === 'manual' && selectedNumbers.length === 0 && !selectedPackage) {
+    if (selectedNumbers.length === 0) {
       alert("Por favor, selecione ao menos um número ou pacote.");
-      return;
-    }
-
-    if (raffle?.type === 'automatic' && !selectedPackage) {
-      alert("Por favor, selecione um pacote.");
       return;
     }
 
@@ -613,8 +657,8 @@ const RaffleDetails = () => {
       telefone: String(buyerInfo.whatsapp || ''),
       cpf: String(buyerInfo.cpf || ''),
       instagram: String(buyerInfo.instagram || ''),
-      numero: raffle?.type === 'manual' ? [...selectedNumbers] : [],
-      pacote: raffle?.type === 'automatic' ? (selectedPackage?.id ? String(selectedPackage.id) : undefined) : undefined
+      numero: [...selectedNumbers],
+      pacote: selectedPackage?.id ? String(selectedPackage.id) : undefined
     };
 
     console.log("==================================================");
@@ -790,7 +834,7 @@ const RaffleDetails = () => {
           )}
 
           {/* Packages Section */}
-          {raffle.type === 'automatic' && raffle.packages && raffle.packages.filter(p => p.active).length > 0 && step === 1 && (
+          {raffle.packages && raffle.packages.filter(p => p.active).length > 0 && step === 1 && (
             <div className="space-y-4 mb-8">
               <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                 <Package className="text-primary" />
@@ -833,6 +877,48 @@ const RaffleDetails = () => {
             </div>
           )}
 
+          {/* Numbers Generated for Checking */}
+          {selectedNumbers.length > 0 && step === 1 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }} 
+              animate={{ opacity: 1, y: 0 }}
+              className="card p-6 border-2 border-primary/20 bg-primary/5 mb-8 animate-fade-in"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                <div>
+                  <h4 className="font-black text-slate-900 flex items-center gap-2 text-lg">
+                    <Ticket className="text-primary w-5 h-5 animate-pulse" />
+                    Números da Sorte Gerados
+                  </h4>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Estes são os seus números da sorte. Clique em qualquer número para substituí-lo por outro aleatório disponível, ou clique em Gerar Novamente!
+                  </p>
+                </div>
+                <button 
+                  onClick={regenerateNumbers}
+                  className="px-4 py-2 bg-primary hover:bg-primary/90 text-white text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 self-start sm:self-center transition-all hover:scale-105 active:scale-95"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Gerar Novamente
+                </button>
+              </div>
+              
+              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-4 bg-white rounded-2xl border border-slate-100">
+                {selectedNumbers.map((num) => (
+                  <span 
+                    key={num} 
+                    className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 bg-slate-50 hover:bg-red-50 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-xl font-bold text-sm text-slate-700 transition-all cursor-pointer group hover:scale-105"
+                    onClick={() => removeAndReplaceNumber(num)}
+                    title="Clique para substituir"
+                  >
+                    {num.toString().padStart(2, '0')}
+                    <X className="w-3.5 h-3.5 text-slate-400 group-hover:text-red-500 transition-colors" />
+                  </span>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
           {/* Number Selection */}
           {isSoldOut ? (
             <div className="card p-12 text-center bg-slate-50 border-2 border-dashed border-slate-200">
@@ -858,11 +944,11 @@ const RaffleDetails = () => {
                       {numbers.map(n => (
                         <button
                           key={n.id}
-                          disabled={isPago(n.status)}
+                          disabled={!isNumberAvailable(n)}
                           onClick={() => toggleNumber(n.number)}
                           className={cn(
                             "aspect-square rounded-lg flex items-center justify-center text-sm font-bold transition-all",
-                            isPago(n.status) ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
+                            !isNumberAvailable(n) ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300" :
                             selectedNumbers.includes(n.number) ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" :
                             "bg-white border border-slate-200 text-slate-600 hover:border-primary hover:text-primary"
                           )}
@@ -1112,9 +1198,9 @@ const RaffleDetails = () => {
                   )}
                   <button 
                     disabled={
-                      raffle.type === 'manual' 
-                        ? selectedNumbers.length < (raffle.min_purchase_quantity || 1)
-                        : !selectedPackage
+                      selectedPackage 
+                        ? false 
+                        : selectedNumbers.length < (raffle.min_purchase_quantity || 1)
                     }
                     onClick={() => {
                       console.log("Estado ao clicar Continuar:", {
