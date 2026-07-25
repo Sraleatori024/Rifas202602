@@ -215,10 +215,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`[PAYMENT] Nova tentativa de compra: Rifa ${raffleId} | Cliente: ${buyer?.name}`);
 
-    if (!raffleId || (requestedNumbers.length === 0 && !packageId) || !buyer?.whatsapp || !buyer?.name) {
+    const buyerNameClean = String(buyer?.name || "").trim();
+    if (!raffleId || (requestedNumbers.length === 0 && !packageId) || !buyer?.whatsapp || !buyerNameClean || buyerNameClean.length < 3) {
       return res.status(400).json({ 
         success: false, 
-        message: "Dados incompletos para processar o pagamento." 
+        message: "Nome Completo e WhatsApp (com DDD) são obrigatórios para realizar a compra." 
       });
     }
 
@@ -227,7 +228,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({
         success: false,
         code: "TELEFONE_INVALIDO",
-        message: "Número de telefone inválido. Use o formato (DDD) 99999-9999"
+        message: "WhatsApp inválido. Por favor, insira o DDD e o número completo, ex: (11) 99999-9999"
       });
     }
 
@@ -367,7 +368,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       webhook_url: `${appUrl}/api/webhook-syncpay`,
       external_id: String(identifier),
       client: {
-        name: buyer.name || "Cliente",
+        name: buyerNameClean,
         phone: normalizePhone(buyer.whatsapp),
         email: buyer.email || "cliente@exemplo.com",
         cpf: normalizeCPF(buyer.cpf)
@@ -409,7 +410,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         number: Number(num),
         status: 'reserved',
         expires_at: expiresAtDate,
-        buyer_name: buyer.name || "Cliente",
+        buyer_name: buyerNameClean,
         buyer_phone: normalizePhone(buyer.whatsapp),
         purchase_id: identifier,
         updated_at: admin.firestore.FieldValue.serverTimestamp()
@@ -419,7 +420,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 2. Save the pending purchase
     const compraRef = db.collection("compras").doc(identifier);
     batch.set(compraRef, {
-      nome: buyer.name || "Cliente",
+      nome: buyerNameClean,
       telefone: normalizePhone(buyer.whatsapp),
       cpf: payload.client.cpf,
       pix_code: pix_code,

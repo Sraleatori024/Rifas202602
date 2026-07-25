@@ -656,8 +656,16 @@ const RaffleDetails = () => {
   const handlePurchase = async () => {
     if (generatingPix) return;
 
-    if (!buyerInfo.name || !buyerInfo.whatsapp) {
-      alert("Por favor, preencha nome e WhatsApp.");
+    const cleanName = String(buyerInfo.name || '').trim();
+    const cleanPhoneDigits = String(buyerInfo.whatsapp || '').replace(/\D/g, '');
+
+    if (!cleanName || cleanName.length < 3) {
+      alert("Por favor, preencha seu Nome Completo (mínimo 3 letras).");
+      return;
+    }
+
+    if (!cleanPhoneDigits || cleanPhoneDigits.length < 10) {
+      alert("Por favor, informe um número de WhatsApp válido com o DDD (ex: 11 99999-9999).");
       return;
     }
 
@@ -978,41 +986,52 @@ const RaffleDetails = () => {
 
           {step === 2 && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card p-8">
-              <div className="flex items-center gap-4 mb-8">
+              <div className="flex items-center gap-4 mb-6">
                 <div className="w-12 h-12 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
                   <UserIcon className="w-6 h-6" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Seus Dados</h3>
-                  <p className="text-sm text-slate-500">Informe seus dados para a compra</p>
+                  <p className="text-sm text-slate-500">Informe seu WhatsApp e Nome para vincular seus números</p>
                 </div>
+              </div>
+
+              <div className="mb-6 p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs font-medium flex items-center gap-3">
+                <span className="text-lg">📌</span>
+                <span><strong>Atenção:</strong> Nome Completo e WhatsApp com DDD são <strong>obrigatórios</strong> para que você consiga consultar suas compras futuramente.</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Nome Completo *</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Nome Completo <span className="text-red-500 font-black">* (Obrigatório)</span>
+                  </label>
                   <div className="relative">
                     <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                     <input 
                       type="text" 
                       value={buyerInfo.name}
                       onChange={e => setBuyerInfo({...buyerInfo, name: e.target.value})}
-                      className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all bg-slate-50/50"
-                      placeholder="Como você quer ser chamado?"
+                      className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all bg-slate-50/50 font-bold text-slate-800"
+                      placeholder="Ex: João da Silva"
+                      required
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">WhatsApp *</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    WhatsApp <span className="text-red-500 font-black">* (Com DDD)</span>
+                  </label>
                   <div className="relative">
                     <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                     <input 
                       type="text" 
                       value={buyerInfo.whatsapp}
                       onChange={e => setBuyerInfo({...buyerInfo, whatsapp: e.target.value})}
-                      className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all bg-slate-50/50"
-                      placeholder="(00) 00000-0000"
+                      className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all bg-slate-50/50 font-bold text-slate-800"
+                      placeholder="(11) 99999-9999"
+                      required
                     />
                   </div>
                 </div>
@@ -2995,6 +3014,7 @@ export default function App() {
   const [showConsult, setShowConsult] = useState(false);
   const [phone, setPhone] = useState('');
   const [cpf, setCpf] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [consultResult, setConsultResult] = useState<any>(null);
   const [consulting, setConsulting] = useState(false);
 
@@ -3033,7 +3053,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: safeStringify({ 
           whatsapp: normalizedPhone ? String(normalizedPhone) : undefined,
-          cpf: normalizedCpf ? String(normalizedCpf) : undefined
+          cpf: normalizedCpf ? String(normalizedCpf) : undefined,
+          search: searchQuery ? String(searchQuery).trim() : undefined,
+          identifier: searchQuery ? String(searchQuery).trim() : undefined,
+          nome: searchQuery ? String(searchQuery).trim() : undefined
         })
       });
       const data = await res.json();
@@ -3233,12 +3256,6 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="relative flex items-center py-2">
-                          <div className="flex-grow border-t border-slate-100"></div>
-                          <span className="flex-shrink mx-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">ou</span>
-                          <div className="flex-grow border-t border-slate-100"></div>
-                        </div>
-
                         <div className="space-y-2">
                           <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">CPF</label>
                           <div className="relative group">
@@ -3252,12 +3269,27 @@ export default function App() {
                             />
                           </div>
                         </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Nome Completo ou ID da Compra</label>
+                          <div className="relative group">
+                            <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-primary transition-colors" />
+                            <input 
+                              type="text" 
+                              value={searchQuery}
+                              onChange={e => setSearchQuery(e.target.value)}
+                              className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-2 border-transparent outline-none focus:bg-white focus:ring-4 focus:ring-primary/5 focus:border-primary transition-all font-bold text-base"
+                              placeholder="Ex: Nicolas ou compra_..."
+                            />
+                          </div>
+                          <p className="text-[11px] text-slate-400 font-medium ml-1">Preencha qualquer um dos campos acima para encontrar seus números.</p>
+                        </div>
                       </div>
 
                       <div className="flex flex-col gap-4 pt-4">
                         <button 
                           type="submit" 
-                          disabled={consulting || (!phone && !cpf)} 
+                          disabled={consulting || (!phone && !cpf && !searchQuery)} 
                           className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-3"
                         >
                           {consulting ? (
@@ -3315,10 +3347,13 @@ export default function App() {
                             <div key={pIdx} className="space-y-4 p-5 bg-white rounded-3xl border border-slate-100 shadow-sm">
                               <div className="flex items-center justify-between px-1">
                                 <div>
-                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Rifa</p>
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Rifa</p>
                                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{purchase.raffleName}</p>
+                                  <p className="text-[10px] font-mono font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-md inline-block my-1 select-all border border-primary/10">
+                                    ID: {purchase.id}
+                                  </p>
                                   {purchase.createdAt && (
-                                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                    <p className="text-[10px] text-slate-400 font-medium">
                                       {new Date(purchase.createdAt).toLocaleDateString('pt-BR')} às {new Date(purchase.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                                     </p>
                                   )}

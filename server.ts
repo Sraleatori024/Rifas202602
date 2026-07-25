@@ -239,10 +239,21 @@ async function startServer() {
     
     console.log(`[PAYMENT] Nova tentativa de compra: Rifa ${raffleId} | Cliente: ${buyer?.name}`);
 
-    if (!raffleId || (requestedNumbers.length === 0 && !pkgInfo) || !buyer?.whatsapp || !buyer?.name) {
+    const buyerNameClean = String(buyer?.name || "").trim();
+    const buyerPhoneClean = normalizePhone(buyer?.whatsapp || "");
+
+    if (!raffleId || (requestedNumbers.length === 0 && !pkgInfo) || !buyerPhoneClean || !buyerNameClean || buyerNameClean.length < 3) {
       return res.status(400).json({ 
         success: false, 
-        message: "Dados incompletos para processar o pagamento." 
+        message: "Nome Completo e WhatsApp (com DDD) são obrigatórios para realizar a compra." 
+      });
+    }
+
+    if (buyerPhoneClean.length < 10 || buyerPhoneClean.length > 11) {
+      return res.status(400).json({
+        success: false,
+        code: "TELEFONE_INVALIDO",
+        message: "WhatsApp inválido. Por favor, insira o DDD e o número completo, ex: (11) 99999-9999"
       });
     }
 
@@ -384,8 +395,8 @@ async function startServer() {
           number: Number(num),
           status: 'reserved',
           expires_at: expiresAtDate,
-          buyer_name: buyer.name || "Cliente",
-          buyer_phone: normalizePhone(buyer.whatsapp),
+          buyer_name: buyerNameClean,
+          buyer_phone: buyerPhoneClean,
           purchase_id: identifier,
           updated_at: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
@@ -394,8 +405,8 @@ async function startServer() {
       // 2. Save the pending purchase
       const compraRef = db.collection("compras").doc(identifier);
       batch.set(compraRef, {
-        nome: buyer.name || "Cliente",
-        telefone: normalizePhone(buyer.whatsapp),
+        nome: buyerNameClean,
+        telefone: buyerPhoneClean,
         cpf: normalizeCPF(buyer.cpf),
         pix_code: pix_code,
         identifier: identifier,
@@ -627,25 +638,44 @@ async function startServer() {
 
   // Consultar Números
   app.post("/api/consultar-numeros", async (req, res) => {
-    const { whatsapp, cpf } = req.body;
-    if (!whatsapp && !cpf) {
+    const { whatsapp, cpf, nome, identifier, search } = req.body;
+    
+    const phone = whatsapp ? normalizePhone(whatsapp) : null;
+    const rawPhone = whatsapp ? String(whatsapp).trim() : null;
+    const cleanCpf = cpf ? normalizeCPF(cpf) : null;
+    const rawCpf = cpf ? String(cpf).trim() : null;
+    const rawSearch = String(search || "").trim();
+    const searchName = String(nome || rawSearch || "").trim();
+    const searchId = String(identifier || (rawSearch.includes("compra_") ? rawSearch : "")).trim();
+
+    if (!phone && !cleanCpf && !searchName && !searchId) {
       return res.status(400).json({ 
         success: false, 
         code: "DADOS_INCOMPLETOS",
-        message: "WhatsApp ou CPF é obrigatório" 
+        message: "Informe WhatsApp, CPF, Nome ou Código da Compra." 
       });
     }
 
     try {
-      const phone = whatsapp ? normalizePhone(whatsapp) : null;
-      const rawPhone = whatsapp ? String(whatsapp).trim() : null;
-      const cleanCpf = cpf ? normalizeCPF(cpf) : null;
-      const rawCpf = cpf ? String(cpf).trim() : null;
-
-      console.log(`[Consultar] Buscando por Telefone: ${phone}, CPF: ${cleanCpf}`);
+      console.log(`[Consultar] Buscando por Telefone: ${phone}, CPF: ${cleanCpf}, Nome/Search: ${searchName}, ID: ${searchId}`);
 
       const db = getDb();
       const queries: Promise<admin.firestore.QuerySnapshot>[] = [];
+      const directDocPromises: Promise<admin.firestore.DocumentSnapshot>[] = [];
+
+      // Direct doc lookup
+      if (searchId) {
+        directDocPromises.push(db.collection("compras").doc(searchId).get());
+        if (!searchId.startsWith("compra_")) {
+          directDocPromises.push(db.collection("compras").doc(`compra_${searchId}`).get());
+        }
+        queries.push(db.collection("compras").where("identifier", "==", searchId).get());
+      }
+
+      if (rawSearch && !searchId) {
+        directDocPromises.push(db.collection("compras").doc(rawSearch).get());
+        queries.push(db.collection("compras").where("identifier", "==", rawSearch).get());
+      }
 
       if (phone) {
         queries.push(db.collection("compras").where("telefone", "==", phone).get());
@@ -655,17 +685,41 @@ async function startServer() {
         }
       }
 
-      if (cleanCpf) {
+      if (cleanCpf && cleanCpf !== "00000000000") {
         queries.push(db.collection("compras").where("cpf", "==", cleanCpf).get());
         if (rawCpf && rawCpf !== cleanCpf) {
           queries.push(db.collection("compras").where("cpf", "==", rawCpf).get());
         }
       }
 
-      const snapshots = await Promise.all(queries);
+      if (searchName && searchName.length >= 3) {
+        queries.push(db.collection("compras").where("nome", "==", searchName).get());
+        queries.push(
+          db.collection("compras")
+            .where("nome", ">=", searchName)
+            .where("nome", "<=", searchName + "\uf8ff")
+            .limit(20)
+            .get()
+        );
+      }
 
-      if (snapshots.every(s => s.empty)) {
-        return res.json({ success: false, message: "Nenhuma compra encontrada para estes dados." });
+      const [snapshots, directDocs] = await Promise.all([
+        Promise.all(queries),
+        Promise.all(directDocPromises)
+      ]);
+
+      const allDocSnaps: admin.firestore.DocumentSnapshot[] = [];
+      for (const snap of directDocs) {
+        if (snap.exists) allDocSnaps.push(snap);
+      }
+      for (const snapshot of snapshots) {
+        for (const doc of snapshot.docs) {
+          allDocSnaps.push(doc);
+        }
+      }
+
+      if (allDocSnaps.length === 0) {
+        return res.json({ success: false, message: "Nenhuma compra registrada para estes dados." });
       }
 
       let allPurchases: any[] = [];
@@ -673,41 +727,39 @@ async function startServer() {
       const processedDocs = new Set<string>();
       const raffleNames: Record<string, string> = {};
 
-      for (const snapshot of snapshots) {
-        for (const doc of snapshot.docs) {
-          if (processedDocs.has(doc.id)) continue;
-          processedDocs.add(doc.id);
+      for (const doc of allDocSnaps) {
+        if (processedDocs.has(doc.id)) continue;
+        processedDocs.add(doc.id);
 
-          const data = doc.data();
-          if (data.numero && Array.isArray(data.numero)) {
-            const rifaId = data.rifaId;
-            if (rifaId && !raffleNames[rifaId]) {
-              try {
-                const rSnap = await db.collection("raffles").doc(rifaId).get();
-                if (rSnap.exists) {
-                  raffleNames[rifaId] = rSnap.data()?.name || "Rifa";
-                }
-              } catch (e) {
-                raffleNames[rifaId] = "Rifa";
+        const data = doc.data();
+        if (data && data.numero && Array.isArray(data.numero)) {
+          const rifaId = data.rifaId;
+          if (rifaId && !raffleNames[rifaId]) {
+            try {
+              const rSnap = await db.collection("raffles").doc(rifaId).get();
+              if (rSnap.exists) {
+                raffleNames[rifaId] = rSnap.data()?.name || "Rifa";
               }
+            } catch (e) {
+              raffleNames[rifaId] = "Rifa";
             }
-
-            const isPaid = isPago(data.status);
-
-            allPurchases.push({
-              id: doc.id,
-              raffleId: rifaId,
-              raffleName: raffleNames[rifaId] || "Rifa Especial",
-              numbers: data.numero,
-              status: isPaid ? "paid" : "pending",
-              rawStatus: data.status,
-              valor: data.valor || 0,
-              pix_code: data.pix_code || "",
-              createdAt: data.createdAt?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString()
-            });
           }
-          if (!name && data.nome) name = data.nome;
+
+          const isPaid = isPago(data.status);
+
+          allPurchases.push({
+            id: doc.id,
+            raffleId: rifaId,
+            raffleName: raffleNames[rifaId] || "Rifa Especial",
+            numbers: data.numero,
+            status: isPaid ? "paid" : "pending",
+            rawStatus: data.status,
+            valor: data.valor || 0,
+            pix_code: data.pix_code || "",
+            createdAt: data.createdAt?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString()
+          });
         }
+        if (!name && data?.nome) name = data.nome;
       }
 
       // Ordena compras: pagas primeiro, e por data mais recente
