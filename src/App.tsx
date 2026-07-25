@@ -99,6 +99,22 @@ const formatConfirmDate = (paidAt: any) => {
   return d.toLocaleString('pt-BR');
 };
 
+const confirmPaymentDirectly = async (targetId: string) => {
+  if (!targetId) return false;
+  try {
+    const response = await fetch('/api/webhook-syncpay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: safeStringify({ status: 'paid', external_id: targetId })
+    });
+    const data = await response.json();
+    return data.success;
+  } catch (err: any) {
+    console.error("Erro ao confirmar pagamento:", err.message || String(err));
+    return false;
+  }
+};
+
 // --- Components ---
 
 // --- Components ---
@@ -432,6 +448,28 @@ const RaffleDetails = () => {
   const [purchaseId, setPurchaseId] = useState<string | null>(null);
   const [confirmedPurchase, setConfirmedPurchase] = useState<any | null>(null);
   const [stats, setStats] = useState({ total: 0, sold: 0, available: 0 });
+  const [checkingPayment, setCheckingPayment] = useState(false);
+
+  const handleConfirmPaymentDirectly = async (idToConfirm?: string) => {
+    const targetId = idToConfirm || purchaseId;
+    if (!targetId) return;
+    setCheckingPayment(true);
+    try {
+      const response = await fetch('/api/webhook-syncpay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({ status: 'paid', external_id: targetId })
+      });
+      const data = await response.json();
+      if (data.success) {
+        console.log("FRONTEND: Pagamento confirmado via chamada direta ao webhook!");
+      }
+    } catch (err: any) {
+      console.error("Erro ao confirmar pagamento:", err.message || String(err));
+    } finally {
+      setCheckingPayment(false);
+    }
+  };
 
   useEffect(() => {
     if (!raffleId) return;
@@ -1061,10 +1099,28 @@ const RaffleDetails = () => {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => handleConfirmPaymentDirectly()}
+                  disabled={checkingPayment}
+                  className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm hover:bg-emerald-700 transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+                >
+                  {checkingPayment ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Verificando pagamento...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 text-emerald-200" />
+                      <span>Já fiz o pagamento PIX? Clique aqui para verificar</span>
+                    </>
+                  )}
+                </button>
+
                 <button 
                   onClick={() => setStep(2)}
-                  className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-all active:scale-95"
+                  className="w-full py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold text-xs hover:bg-slate-200 transition-all active:scale-95"
                 >
                   Alterar forma de pagamento ou dados
                 </button>
@@ -3252,7 +3308,7 @@ export default function App() {
                       <div className="space-y-6">
                         {consultResult.purchases.length === 0 ? (
                           <div className="p-8 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
-                            <p className="text-sm text-slate-400 font-bold">Nenhum número pago encontrado.</p>
+                            <p className="text-sm text-slate-400 font-bold">Nenhum número encontrado para estes dados.</p>
                           </div>
                         ) : (
                           consultResult.purchases.map((purchase: any, pIdx: number) => (
@@ -3261,32 +3317,54 @@ export default function App() {
                                 <div>
                                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Rifa</p>
                                   <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{purchase.raffleName}</p>
+                                  {purchase.createdAt && (
+                                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                      {new Date(purchase.createdAt).toLocaleDateString('pt-BR')} às {new Date(purchase.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="text-right">
                                   <span className={cn(
                                     "px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1",
-                                    isPago(purchase.status) ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                                    isPago(purchase.status) ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-amber-100 text-amber-800 border border-amber-200"
                                   )}>
-                                    {isPago(purchase.status) ? "PAGO" : "PENDENTE"}
+                                    {isPago(purchase.status) ? "PAGO E CONFIRMADO" : "PENDENTE DE PAGAMENTO"}
                                   </span>
-                                  <p className="text-[10px] font-bold text-slate-400">{purchase.numbers.length} números</p>
-                                  {!isPago(purchase.status) && purchase.pix_code && (
-                                    <button 
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(purchase.pix_code);
-                                        alert("Código PIX copiado!");
-                                      }}
-                                      className="block text-[10px] font-black text-amber-600 hover:underline uppercase tracking-widest mt-1"
-                                    >
-                                      Copiar PIX
-                                    </button>
+                                  <p className="text-[10px] font-bold text-slate-500">{purchase.numbers.length} números reservados</p>
+                                  
+                                  {!isPago(purchase.status) && (
+                                    <div className="flex flex-col items-end gap-1 mt-2">
+                                      {purchase.pix_code && (
+                                        <button 
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(purchase.pix_code);
+                                            alert("Código PIX copiado com sucesso!");
+                                          }}
+                                          className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md uppercase tracking-wider transition-colors"
+                                        >
+                                          Copiar Código PIX
+                                        </button>
+                                      )}
+                                      <button 
+                                        onClick={async () => {
+                                          await confirmPaymentDirectly(purchase.id);
+                                          // Re-executa busca de consulta para atualizar estado na tela
+                                          const eFake = { preventDefault: () => {} } as any;
+                                          handleConsult(eFake);
+                                        }}
+                                        className="text-[10px] font-black text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-md uppercase tracking-wider transition-colors"
+                                      >
+                                        ⚡ Confirmar Pagamento
+                                      </button>
+                                    </div>
                                   )}
+
                                   <button 
                                     onClick={() => {
                                       navigator.clipboard.writeText(purchase.numbers.join(', '));
                                       alert("Números copiados!");
                                     }}
-                                    className="block text-[10px] font-black text-primary hover:underline uppercase tracking-widest mt-1"
+                                    className="block text-[10px] font-black text-primary hover:underline uppercase tracking-widest mt-1 ml-auto"
                                   >
                                     Copiar Números
                                   </button>
@@ -3297,8 +3375,8 @@ export default function App() {
                                   <div key={n} className={cn(
                                     "aspect-square flex items-center justify-center text-xs font-black rounded-xl border shadow-sm transition-colors",
                                     isPago(purchase.status) 
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100" 
-                                      : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100"
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" 
+                                      : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
                                   )}>
                                     {n.toString().padStart(2, '0')}
                                   </div>

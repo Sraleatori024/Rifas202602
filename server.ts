@@ -638,36 +638,40 @@ async function startServer() {
 
     try {
       const phone = whatsapp ? normalizePhone(whatsapp) : null;
+      const rawPhone = whatsapp ? String(whatsapp).trim() : null;
       const cleanCpf = cpf ? normalizeCPF(cpf) : null;
+      const rawCpf = cpf ? String(cpf).trim() : null;
 
       console.log(`[Consultar] Buscando por Telefone: ${phone}, CPF: ${cleanCpf}`);
 
       const db = getDb();
-      let snapshots: admin.firestore.QuerySnapshot[] = [];
+      const queries: Promise<admin.firestore.QuerySnapshot>[] = [];
 
-      if (phone && cleanCpf) {
-        const q1 = db.collection("compras").where("telefone", "==", phone).get();
-        const q2 = db.collection("compras").where("cpf", "==", cleanCpf).get();
-        snapshots = await Promise.all([q1, q2]);
-      } else if (phone) {
-        // Busca pelo telefone normalizado e também tenta com prefixo 55 caso tenha sido salvo assim
-        const q1 = db.collection("compras").where("telefone", "==", phone).get();
-        const q2 = db.collection("compras").where("telefone", "==", "55" + phone).get();
-        const q3 = db.collection("compras").where("telefone", "==", whatsapp).get(); // Tenta original também
-        snapshots = await Promise.all([q1, q2, q3]);
-      } else if (cleanCpf) {
-        snapshots = [await db.collection("compras").where("cpf", "==", cleanCpf).get()];
+      if (phone) {
+        queries.push(db.collection("compras").where("telefone", "==", phone).get());
+        queries.push(db.collection("compras").where("telefone", "==", "55" + phone).get());
+        if (rawPhone && rawPhone !== phone) {
+          queries.push(db.collection("compras").where("telefone", "==", rawPhone).get());
+        }
       }
 
-      console.log(`[Consultar] Snapshots encontrados: ${snapshots.length}, Total docs: ${snapshots.reduce((acc, s) => acc + s.size, 0)}`);
+      if (cleanCpf) {
+        queries.push(db.collection("compras").where("cpf", "==", cleanCpf).get());
+        if (rawCpf && rawCpf !== cleanCpf) {
+          queries.push(db.collection("compras").where("cpf", "==", rawCpf).get());
+        }
+      }
+
+      const snapshots = await Promise.all(queries);
 
       if (snapshots.every(s => s.empty)) {
-        return res.json({ success: false, message: "Nenhuma compra encontrada" });
+        return res.json({ success: false, message: "Nenhuma compra encontrada para estes dados." });
       }
 
-      let confirmedNumbersByRaffle: Record<string, { raffleName: string, numbers: number[], status: string }> = {};
+      let allPurchases: any[] = [];
       let name = "";
       const processedDocs = new Set<string>();
+      const raffleNames: Record<string, string> = {};
 
       for (const snapshot of snapshots) {
         for (const doc of snapshot.docs) {
@@ -677,44 +681,45 @@ async function startServer() {
           const data = doc.data();
           if (data.numero && Array.isArray(data.numero)) {
             const rifaId = data.rifaId;
-            if (rifaId) {
-              if (!confirmedNumbersByRaffle[rifaId]) {
-                let raffleName = "Rifa";
+            if (rifaId && !raffleNames[rifaId]) {
+              try {
                 const rSnap = await db.collection("raffles").doc(rifaId).get();
                 if (rSnap.exists) {
-                  raffleName = rSnap.data()?.name || "Rifa";
+                  raffleNames[rifaId] = rSnap.data()?.name || "Rifa";
                 }
-                confirmedNumbersByRaffle[rifaId] = {
-                  raffleName,
-                  numbers: [],
-                  status: data.status || 'criada'
-                };
-              }
-              
-              // Adiciona os números e remove duplicatas
-              const currentNumbers = confirmedNumbersByRaffle[rifaId].numbers;
-              const newNumbers = data.numero.filter((n: number) => !currentNumbers.includes(n));
-              confirmedNumbersByRaffle[rifaId].numbers = [...currentNumbers, ...newNumbers].sort((a, b) => a - b);
-              
-              // Se qualquer compra daquela rifa estiver paga, marca como paga
-              if (isPago(data.status)) {
-                confirmedNumbersByRaffle[rifaId].status = "paid";
+              } catch (e) {
+                raffleNames[rifaId] = "Rifa";
               }
             }
+
+            const isPaid = isPago(data.status);
+
+            allPurchases.push({
+              id: doc.id,
+              raffleId: rifaId,
+              raffleName: raffleNames[rifaId] || "Rifa Especial",
+              numbers: data.numero,
+              status: isPaid ? "paid" : "pending",
+              rawStatus: data.status,
+              valor: data.valor || 0,
+              pix_code: data.pix_code || "",
+              createdAt: data.createdAt?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString()
+            });
           }
           if (!name && data.nome) name = data.nome;
         }
       }
 
-      const paidPurchases = Object.values(confirmedNumbersByRaffle).filter(p => isPago(p.status));
-
-      if (paidPurchases.length === 0) {
-        return res.json({ success: false, message: "Nenhuma compra paga encontrada" });
-      }
+      // Ordena compras: pagas primeiro, e por data mais recente
+      allPurchases.sort((a, b) => {
+        if (a.status === 'paid' && b.status !== 'paid') return -1;
+        if (a.status !== 'paid' && b.status === 'paid') return 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
 
       res.json({
         success: true,
-        purchases: paidPurchases,
+        purchases: allPurchases,
         name: name
       });
     } catch (error: any) {
