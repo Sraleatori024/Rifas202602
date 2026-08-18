@@ -30,18 +30,47 @@ const isPago = (status: string | undefined): boolean => {
   return ["paid", "pago", "completed", "approved", "sucesso"].includes(s);
 };
 
-const safeStringify = (obj: any, indent: number = 2) => {
+const safeStringify = (obj: any, indent: number = 2): string => {
+  if (obj === undefined) return 'undefined';
+  if (obj === null) return 'null';
+  if (typeof obj === 'string') return obj;
+  if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
+
   try {
-    const cache = new Set();
-    return JSON.stringify(obj, (key, value) => {
-      if (typeof value === 'object' && value !== null) {
-        if (cache.has(value)) return '[Circular]';
-        cache.add(value);
+    const seen = new WeakSet();
+    const cleanObject = (item: any, depth = 0): any => {
+      if (depth > 6) return '[Max Depth]';
+      if (item === null || typeof item !== 'object') {
+        if (typeof item === 'bigint') return item.toString();
+        if (typeof item === 'function') return '[Function]';
+        if (typeof item === 'symbol') return item.toString();
+        return item;
       }
-      return value;
-    }, indent);
+      if (seen.has(item)) return '[Circular]';
+      seen.add(item);
+
+      if (Array.isArray(item)) {
+        return item.map(el => cleanObject(el, depth + 1));
+      }
+
+      const result: Record<string, any> = {};
+      for (const key of Object.keys(item)) {
+        try {
+          result[key] = cleanObject(item[key], depth + 1);
+        } catch {
+          result[key] = '[Unserializable]';
+        }
+      }
+      return result;
+    };
+
+    return JSON.stringify(cleanObject(obj), null, indent);
   } catch (e) {
-    return "[Erro ao serializar objeto]";
+    try {
+      return String(obj);
+    } catch {
+      return "[Erro ao serializar objeto]";
+    }
   }
 };
 
@@ -274,9 +303,6 @@ async function startServer() {
 
       const raffleType = raffleData.type || 'manual';
 
-      // Clean up expired reservations first to free up space
-      await cleanupExpiredReservations(db, raffleId);
-
       // Determine the quantity and final numbers list
       if (finalNumbers.length > 0) {
         quantityNeeded = finalNumbers.length;
@@ -296,7 +322,7 @@ async function startServer() {
           totalAmount = quantityNeeded * (raffleData.price || 0);
         }
       } else {
-        // Fallback: Generate numbers on server if not provided (e.g. older flow or backend direct)
+        // Fallback: Generate numbers in memory using raffle's occupied_numbers
         if (pkgInfo) {
           let pkg;
           if (typeof pkgInfo === 'string') {
@@ -312,7 +338,20 @@ async function startServer() {
           return res.status(400).json({ success: false, message: "Selecione ao menos um número ou pacote." });
         }
 
-        finalNumbers = await generateUniqueAvailableNumbersOnServer(db, raffleId, quantityNeeded, raffleData.total_numbers || 100);
+        const totalNums = raffleData.total_numbers || 100;
+        const occupiedList = Array.isArray(raffleData.occupied_numbers) ? raffleData.occupied_numbers.map(Number) : [];
+        const occupiedSet = new Set(occupiedList);
+        const availablePool: number[] = [];
+        for (let i = 0; i < totalNums; i++) {
+          if (!occupiedSet.has(i)) availablePool.push(i);
+        }
+
+        if (availablePool.length < quantityNeeded) {
+          return res.status(400).json({ success: false, message: "Não há números disponíveis suficientes na rifa." });
+        }
+
+        const shuffled = availablePool.sort(() => 0.5 - Math.random());
+        finalNumbers = shuffled.slice(0, quantityNeeded);
       }
 
       // Check promotions
@@ -327,31 +366,12 @@ async function startServer() {
         }
       }
 
-      // Validate all selected numbers are actually available
-      const numbersRef = raffleRef.collection("numbers");
-      const unavailableNumbers: number[] = [];
-      
-      const checkPromises = finalNumbers.map(async (num) => {
-        const doc = await numbersRef.doc(String(num)).get();
-        if (doc.exists) {
-          const data = doc.data()!;
-          const status = data.status;
-          if (status === 'paid' || status === 'confirmed' || status === 'pago') {
-            return Number(num);
-          } else if (status === 'reserved') {
-            const expiresAt = data.expires_at?.toDate ? data.expires_at.toDate() : new Date(data.expires_at);
-            if (expiresAt > new Date()) {
-              return Number(num);
-            }
-          }
-        }
-        return null;
-      });
-      
-      const checkResults = await Promise.all(checkPromises);
-      checkResults.forEach(res => {
-        if (res !== null) unavailableNumbers.push(res);
-      });
+      // Validate all selected numbers are actually available (validação em memória - 0 leituras extras)
+      const occupiedNumbers: number[] = Array.isArray(raffleData.occupied_numbers) 
+        ? raffleData.occupied_numbers.map(Number) 
+        : [];
+      const occupiedSet = new Set(occupiedNumbers);
+      const unavailableNumbers = finalNumbers.filter(n => occupiedSet.has(n));
 
       if (unavailableNumbers.length > 0) {
         return res.status(400).json({
@@ -389,7 +409,14 @@ async function startServer() {
       const batch = db.batch();
       const expiresAtDate = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes reservation
 
-      // 1. Reserve each number in the raffle
+      // 1. Atualiza documento principal da rifa com os novos números ocupados
+      batch.update(raffleRef, {
+        occupied_numbers: admin.firestore.FieldValue.arrayUnion(...finalNumbers),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // 2. Reserva cada número na subcoleção (sem leitura prévia)
+      const numbersRef = raffleRef.collection("numbers");
       for (const num of finalNumbers) {
         batch.set(numbersRef.doc(String(num)), {
           number: Number(num),
@@ -536,6 +563,7 @@ async function startServer() {
     }
 
     batch.update(raffleRef, {
+      occupied_numbers: admin.firestore.FieldValue.arrayUnion(...finalNumbers),
       sold_count: admin.firestore.FieldValue.increment(finalNumbers.length),
       revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
       updated_at: admin.firestore.FieldValue.serverTimestamp()

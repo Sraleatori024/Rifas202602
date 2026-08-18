@@ -71,18 +71,47 @@ import {
 
 // --- Helpers ---
 
-const safeStringify = (obj: any, indent = 2) => {
+const safeStringify = (obj: any, indent = 2): string => {
+  if (obj === undefined) return 'undefined';
+  if (obj === null) return 'null';
+  if (typeof obj === 'string') return obj;
+  if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
+
   try {
-    const cache = new Set();
-    return JSON.stringify(obj, (key, value) => {
-      if (typeof value === 'object' && value !== null) {
-        if (cache.has(value)) return '[Circular]';
-        cache.add(value);
+    const seen = new WeakSet();
+    const cleanObject = (item: any, depth = 0): any => {
+      if (depth > 6) return '[Max Depth]';
+      if (item === null || typeof item !== 'object') {
+        if (typeof item === 'bigint') return item.toString();
+        if (typeof item === 'function') return '[Function]';
+        if (typeof item === 'symbol') return item.toString();
+        return item;
       }
-      return value;
-    }, indent);
+      if (seen.has(item)) return '[Circular]';
+      seen.add(item);
+
+      if (Array.isArray(item)) {
+        return item.map(el => cleanObject(el, depth + 1));
+      }
+
+      const result: Record<string, any> = {};
+      for (const key of Object.keys(item)) {
+        try {
+          result[key] = cleanObject(item[key], depth + 1);
+        } catch {
+          result[key] = '[Unserializable]';
+        }
+      }
+      return result;
+    };
+
+    return JSON.stringify(cleanObject(obj), null, indent);
   } catch (e) {
-    return "[Erro ao serializar objeto]";
+    try {
+      return String(obj);
+    } catch {
+      return "[Erro ao serializar objeto]";
+    }
   }
 };
 
@@ -479,30 +508,38 @@ const RaffleDetails = () => {
 
     const unsubRaffle = onSnapshot(raffleRef, (docSnap) => {
       if (docSnap.exists()) {
-        setRaffle({ id: docSnap.id, ...docSnap.data() } as any);
+        const data = { id: docSnap.id, ...docSnap.data() } as any;
+        setRaffle(data);
+
+        const total = Number(data.total_numbers) || 100;
+        const occupiedList: number[] = Array.isArray(data.occupied_numbers) 
+          ? data.occupied_numbers.map(Number) 
+          : [];
+        const occupiedSet = new Set(occupiedList);
+        const soldCount = Math.max(occupiedList.length, Number(data.sold_count) || 0);
+
+        // Sintetiza a lista de números diretamente na memória (1 única leitura de documento!)
+        const generatedNumbers: RaffleNumber[] = Array.from({ length: total }, (_, i) => ({
+          id: String(i),
+          number: i,
+          status: occupiedSet.has(i) ? 'paid' : 'available',
+          userId: null,
+          userName: null
+        }));
+
+        setNumbers(generatedNumbers);
+        setStats({ total, sold: soldCount, available: Math.max(0, total - soldCount) });
+        setLoading(false);
+      } else {
+        setLoading(false);
       }
     }, (error) => {
       console.error("Error fetching raffle details:", error.message || String(error));
       setLoading(false);
     });
 
-    const unsubNumbers = onSnapshot(numbersRef, (snapshot) => {
-      const nums = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-      setNumbers(nums.sort((a, b) => a.number - b.number));
-      
-      const total = nums.length;
-      const paid = nums.filter(n => isPago(n.status) || n.status === 'confirmed').length;
-      console.log(`Rifa ${raffleId}: ${paid} números pagos de ${total}`);
-      setStats({ total, sold: paid, available: total - paid });
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching numbers:", error.message || String(error));
-      setLoading(false);
-    });
-
     return () => {
       unsubRaffle();
-      unsubNumbers();
     };
   }, [raffleId]);
 
@@ -2109,6 +2146,7 @@ const AdminDashboard = () => {
           status: 'active',
           sold_count: 0,
           revenue: 0,
+          occupied_numbers: [],
           created_at: new Date().toISOString()
         };
         
