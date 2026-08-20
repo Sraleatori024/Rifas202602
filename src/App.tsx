@@ -131,7 +131,228 @@ const formatConfirmDate = (paidAt: any) => {
 
 // --- Components ---
 
-// --- Components ---
+// Hook para contagem regressiva em tempo real
+const useCountdown = (targetTimestamp: number | null | undefined, onExpire?: () => void) => {
+  const [timeLeft, setTimeLeft] = useState<number>(() => {
+    if (!targetTimestamp) return 0;
+    return Math.max(0, Math.floor((targetTimestamp - Date.now()) / 1000));
+  });
+
+  useEffect(() => {
+    if (!targetTimestamp) return;
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.floor((targetTimestamp - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        onExpire?.();
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [targetTimestamp, onExpire]);
+
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
+  const formatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const isExpired = timeLeft <= 0;
+
+  return { timeLeft, minutes, seconds, formatted, isExpired };
+};
+
+// Componente para exibir cada compra na consulta de números
+const ConsultPurchaseItem = ({ 
+  purchase, 
+  onCopyPix, 
+  onCopyNumbers, 
+  onRequestCancel 
+}: { 
+  key?: any;
+  purchase: any; 
+  onCopyPix: (pix: string) => void; 
+  onCopyNumbers: (numbers: number[]) => void; 
+  onRequestCancel: (purchase: any) => void; 
+}) => {
+  const [isLocalExpired, setIsLocalExpired] = useState(purchase.isExpired || false);
+
+  const expiresTimestamp = purchase.expires_at_timestamp || 
+    (purchase.expires_at ? new Date(purchase.expires_at).getTime() : null);
+
+  const { formatted, isExpired } = useCountdown(
+    !isPago(purchase.status) && !purchase.isCancelled && purchase.status !== 'cancelled' ? expiresTimestamp : null,
+    () => setIsLocalExpired(true)
+  );
+
+  const isPaid = isPago(purchase.status);
+  const isCancelled = purchase.status === 'cancelled' || purchase.status === 'cancelado' || purchase.isCancelled;
+  const isPending = !isPaid && !isCancelled && !isExpired && !isLocalExpired && purchase.status !== 'expired';
+  const effectiveExpired = !isPaid && !isCancelled && (isExpired || isLocalExpired || purchase.status === 'expired');
+
+  return (
+    <div className="space-y-4 p-5 bg-white rounded-3xl border border-slate-100 shadow-sm transition-all">
+      <div className="flex items-center justify-between px-1">
+        <div>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Rifa</p>
+          <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{purchase.raffleName}</p>
+          <p className="text-[10px] font-mono font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-md inline-block my-1 select-all border border-primary/10">
+            ID: {purchase.id}
+          </p>
+          {purchase.createdAt && (
+            <p className="text-[10px] text-slate-400 font-medium">
+              {new Date(purchase.createdAt).toLocaleDateString('pt-BR')} às {new Date(purchase.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
+        </div>
+        <div className="text-right">
+          <span className={cn(
+            "px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1",
+            isPaid && "bg-emerald-100 text-emerald-800 border border-emerald-200",
+            isPending && "bg-amber-100 text-amber-800 border border-amber-200",
+            effectiveExpired && "bg-slate-100 text-slate-700 border border-slate-200",
+            isCancelled && "bg-rose-100 text-rose-800 border border-rose-200"
+          )}>
+            {isPaid && "PAGO E CONFIRMADO"}
+            {isPending && "PENDENTE DE PAGAMENTO"}
+            {effectiveExpired && "EXPIRADO"}
+            {isCancelled && "CANCELADO"}
+          </span>
+          <p className="text-[10px] font-bold text-slate-500">{purchase.numbers.length} números {isPaid ? "comprados" : "reservados"}</p>
+
+          <button 
+            onClick={() => onCopyNumbers(purchase.numbers)}
+            className="block text-[10px] font-black text-primary hover:underline uppercase tracking-widest mt-1 ml-auto"
+          >
+            Copiar Números
+          </button>
+        </div>
+      </div>
+
+      {/* Alertas e ações contextuais */}
+      {isPaid && (
+        <div className="flex items-center gap-2.5 p-3.5 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-200/80 text-xs font-bold">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>Pagamento confirmado! Seus números estão garantidos.</span>
+        </div>
+      )}
+
+      {isPending && (
+        <div className="p-4 bg-amber-50/90 rounded-2xl border border-amber-200 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+              <div>
+                <p className="text-xs font-black text-amber-900 uppercase tracking-wider">Números pendentes</p>
+                <p className="text-xs font-medium text-amber-800">Você tem 15 minutos para realizar o pagamento.</p>
+              </div>
+            </div>
+            {expiresTimestamp && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 rounded-xl text-amber-950 border border-amber-300 font-mono font-black text-xs self-start sm:self-auto shadow-sm">
+                <Clock className="w-3.5 h-3.5 text-amber-700" />
+                <span>Expira em: {formatted}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-amber-200/70">
+            {purchase.pix_code && (
+              <button 
+                onClick={() => onCopyPix(purchase.pix_code)}
+                className="flex items-center gap-1.5 text-xs font-black text-amber-950 bg-amber-200/80 hover:bg-amber-200 px-3 py-2 rounded-xl transition-all active:scale-95 shadow-sm"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copiar Código PIX</span>
+              </button>
+            )}
+
+            <button 
+              onClick={() => onRequestCancel(purchase)}
+              className="flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 px-3 py-2 rounded-xl border border-rose-200 transition-all active:scale-95 ml-auto"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Cancelar números pendentes</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {effectiveExpired && (
+        <div className="flex items-center gap-2.5 p-3.5 bg-slate-50 text-slate-600 rounded-2xl border border-slate-200 text-xs font-bold">
+          <AlertCircle className="w-4 h-4 text-slate-400 shrink-0" />
+          <span>A reserva expirou e os números foram liberados.</span>
+        </div>
+      )}
+
+      {isCancelled && (
+        <div className="flex items-center gap-2.5 p-3.5 bg-slate-50 text-slate-600 rounded-2xl border border-slate-200 text-xs font-bold">
+          <AlertCircle className="w-4 h-4 text-slate-400 shrink-0" />
+          <span>Números cancelados e liberados com sucesso.</span>
+        </div>
+      )}
+
+      {/* Grid com os números */}
+      <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 pt-2 border-t border-slate-50">
+        {purchase.numbers.map((n: number) => (
+          <div key={n} className={cn(
+            "aspect-square flex items-center justify-center text-xs font-black rounded-xl border shadow-sm transition-colors",
+            isPaid && "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
+            isPending && "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100",
+            (effectiveExpired || isCancelled) && "bg-slate-50 text-slate-400 border-slate-200 line-through opacity-70"
+          )}>
+            {n.toString().padStart(2, '0')}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const PaymentStepCountdown = ({ 
+  expiresAt, 
+  onCancel, 
+  isCancelling 
+}: { 
+  expiresAt: number | null; 
+  onCancel: () => void; 
+  isCancelling: boolean; 
+}) => {
+  const { formatted, isExpired } = useCountdown(expiresAt);
+
+  return (
+    <div className="p-4 bg-amber-50/90 rounded-2xl border border-amber-200 mb-6 text-left space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+          <div>
+            <p className="text-xs font-black text-amber-900 uppercase tracking-wider">Números pendentes</p>
+            <p className="text-xs font-medium text-amber-800">
+              {isExpired ? "A reserva de 15 minutos expirou." : "Você tem 15 minutos para realizar o pagamento."}
+            </p>
+          </div>
+        </div>
+        {expiresAt && !isExpired && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 rounded-xl text-amber-950 border border-amber-300 font-mono font-black text-xs self-start sm:self-auto shadow-sm">
+            <Clock className="w-3.5 h-3.5 text-amber-700" />
+            <span>Expira em: {formatted}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="pt-2 border-t border-amber-200/70 flex justify-end">
+        <button
+          type="button"
+          disabled={isCancelling}
+          onClick={onCancel}
+          className="flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 px-3 py-2 rounded-xl border border-rose-200 transition-all active:scale-95 disabled:opacity-50"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>{isCancelling ? "Liberando números..." : "Cancelar números pendentes"}</span>
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const Roulette = ({ purchaseId, raffleId, onResult }: { purchaseId: string, raffleId: string, onResult: (result: any) => void }) => {
   const [spinning, setSpinning] = useState(false);
@@ -460,9 +681,56 @@ const RaffleDetails = () => {
   const [generatingPix, setGeneratingPix] = useState(false);
   const [step, setStep] = useState(1); // 1: Selection, 2: Info, 3: Payment, 4: Success
   const [purchaseId, setPurchaseId] = useState<string | null>(null);
+  const [pixExpiresAt, setPixExpiresAt] = useState<number | null>(null);
   const [confirmedPurchase, setConfirmedPurchase] = useState<any | null>(null);
   const [stats, setStats] = useState({ total: 0, sold: 0, available: 0 });
   const [checkingPayment, setCheckingPayment] = useState(false);
+  const [cancellingPix, setCancellingPix] = useState(false);
+
+  const handleCancelCurrentPix = async () => {
+    if (!purchaseId) {
+      setStep(1);
+      return;
+    }
+    const confirmCancel = window.confirm("Tem certeza que deseja cancelar esses números? Eles voltarão a ficar disponíveis para outras pessoas.");
+    if (!confirmCancel) return;
+
+    setCancellingPix(true);
+    try {
+      let cleanPhone = buyerInfo.whatsapp.replace(/\D/g, '');
+      if (cleanPhone.startsWith("55") && (cleanPhone.length === 12 || cleanPhone.length === 13)) {
+        cleanPhone = cleanPhone.substring(2);
+      }
+      const cleanCpf = buyerInfo.cpf.replace(/\D/g, '');
+
+      const res = await fetch('/api/cancel-pending-purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({
+          purchaseId,
+          whatsapp: cleanPhone || undefined,
+          cpf: cleanCpf || undefined,
+          nome: buyerInfo.name || undefined
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("Números cancelados e liberados com sucesso.");
+        setStep(1);
+        setSelectedNumbers([]);
+        setPurchaseId(null);
+        setPixData(null);
+        setPixExpiresAt(null);
+      } else {
+        alert(data.message || "Erro ao cancelar reserva.");
+      }
+    } catch (err: any) {
+      console.error("Erro ao cancelar reserva:", err);
+      setStep(1);
+    } finally {
+      setCancellingPix(false);
+    }
+  };
 
   const handleCheckPaymentStatus = async () => {
     if (!purchaseId) return;
@@ -762,6 +1030,7 @@ const RaffleDetails = () => {
 
       if (res.ok) {
         setPurchaseId(data.identifier);
+        setPixExpiresAt(data.expires_at_timestamp || (Date.now() + 15 * 60 * 1000));
 
         let resolvedQr = data.qr_code;
         const resolvedPixCode = data.pix_code || "";
@@ -1153,7 +1422,13 @@ const RaffleDetails = () => {
                 </div>
               </div>
               <h3 className="text-2xl font-bold text-slate-900 mb-2">Finalize seu Pagamento</h3>
-              <p className="text-slate-600 mb-8">Escaneie o QR Code ou copie o código PIX. O sistema confirmará automaticamente.</p>
+              <p className="text-slate-600 mb-6">Escaneie o QR Code ou copie o código PIX. O sistema confirmará automaticamente.</p>
+              
+              <PaymentStepCountdown 
+                expiresAt={pixExpiresAt} 
+                onCancel={handleCancelCurrentPix} 
+                isCancelling={cancellingPix} 
+              />
               
               {pixData && (
                 <div className="space-y-6 mb-8">
@@ -3121,6 +3396,9 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [consultResult, setConsultResult] = useState<any>(null);
   const [consulting, setConsulting] = useState(false);
+  const [purchaseToCancel, setPurchaseToCancel] = useState<any | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelToast, setCancelToast] = useState<string | null>(null);
 
   // Terms Acceptance States
   const [showFirstVisitModal, setShowFirstVisitModal] = useState(false);
@@ -3145,6 +3423,55 @@ export default function App() {
     setPhone('');
     setCpf('');
     setSearchQuery('');
+    setCancelToast(null);
+  };
+
+  const handleConfirmCancelPurchase = async () => {
+    if (!purchaseToCancel) return;
+    setCancelling(true);
+    try {
+      let normalizedPhone = phone.replace(/\D/g, '');
+      if (normalizedPhone.startsWith("55") && (normalizedPhone.length === 12 || normalizedPhone.length === 13)) {
+        normalizedPhone = normalizedPhone.substring(2);
+      }
+      const normalizedCpf = cpf.replace(/\D/g, '');
+
+      const res = await fetch('/api/cancel-pending-purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({
+          purchaseId: purchaseToCancel.id,
+          whatsapp: normalizedPhone || undefined,
+          cpf: normalizedCpf || undefined,
+          nome: searchQuery || consultResult?.name || undefined
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setConsultResult((prev: any) => {
+          if (!prev || !prev.purchases) return prev;
+          return {
+            ...prev,
+            purchases: prev.purchases.map((p: any) => 
+              p.id === purchaseToCancel.id 
+                ? { ...p, status: 'cancelled', isCancelled: true }
+                : p
+            )
+          };
+        });
+        setCancelToast("Números cancelados e liberados com sucesso.");
+        setTimeout(() => setCancelToast(null), 6000);
+        setPurchaseToCancel(null);
+      } else {
+        alert(data.message || "Erro ao cancelar reserva.");
+      }
+    } catch (err: any) {
+      console.error("Erro ao cancelar reserva:", err);
+      alert("Erro de conexão ao cancelar reserva.");
+    } finally {
+      setCancelling(false);
+    }
   };
 
   const handleConsult = async (e: React.FormEvent) => {
@@ -3437,6 +3764,17 @@ export default function App() {
                       <p className="text-slate-500 font-medium mt-2">Encontramos os seguintes números para você</p>
                     </div>
 
+                    {cancelToast && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -10 }} 
+                        animate={{ opacity: 1, y: 0 }}
+                        className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-200 flex items-center gap-3 text-sm font-bold shadow-sm"
+                      >
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>{cancelToast}</span>
+                      </motion.div>
+                    )}
+
                     <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar text-left">
                       <div className="flex items-center gap-4 p-5 bg-slate-50 rounded-3xl border border-slate-100">
                         <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm">
@@ -3444,7 +3782,7 @@ export default function App() {
                         </div>
                         <div>
                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cliente Localizado</p>
-                          <p className="text-lg font-black text-slate-900">{consultResult.name}</p>
+                          <p className="text-lg font-black text-slate-900">{consultResult.name || "Cliente"}</p>
                         </div>
                       </div>
 
@@ -3455,67 +3793,16 @@ export default function App() {
                           </div>
                         ) : (
                           consultResult.purchases.map((purchase: any, pIdx: number) => (
-                            <div key={pIdx} className="space-y-4 p-5 bg-white rounded-3xl border border-slate-100 shadow-sm">
-                              <div className="flex items-center justify-between px-1">
-                                <div>
-                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Rifa</p>
-                                  <p className="text-sm font-black text-slate-900 uppercase tracking-tight">{purchase.raffleName}</p>
-                                  <p className="text-[10px] font-mono font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-md inline-block my-1 select-all border border-primary/10">
-                                    ID: {purchase.id}
-                                  </p>
-                                  {purchase.createdAt && (
-                                    <p className="text-[10px] text-slate-400 font-medium">
-                                      {new Date(purchase.createdAt).toLocaleDateString('pt-BR')} às {new Date(purchase.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  <span className={cn(
-                                    "px-3 py-1 text-[10px] font-black rounded-lg inline-block mb-1",
-                                    isPago(purchase.status) ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-amber-100 text-amber-800 border border-amber-200"
-                                  )}>
-                                    {isPago(purchase.status) ? "PAGO E CONFIRMADO" : "PENDENTE DE PAGAMENTO"}
-                                  </span>
-                                  <p className="text-[10px] font-bold text-slate-500">{purchase.numbers.length} números reservados</p>
-                                  
-                                  {!isPago(purchase.status) && purchase.pix_code && (
-                                    <div className="flex flex-col items-end gap-1 mt-2">
-                                      <button 
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(purchase.pix_code);
-                                          alert("Código PIX copiado com sucesso!");
-                                        }}
-                                        className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md uppercase tracking-wider transition-colors"
-                                      >
-                                        Copiar Código PIX
-                                      </button>
-                                    </div>
-                                  )}
-
-                                  <button 
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(purchase.numbers.join(', '));
-                                      alert("Números copiados!");
-                                    }}
-                                    className="block text-[10px] font-black text-primary hover:underline uppercase tracking-widest mt-1 ml-auto"
-                                  >
-                                    Copiar Números
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 pt-2 border-t border-slate-50">
-                                {purchase.numbers.map((n: number) => (
-                                  <div key={n} className={cn(
-                                    "aspect-square flex items-center justify-center text-xs font-black rounded-xl border shadow-sm transition-colors",
-                                    isPago(purchase.status) 
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" 
-                                      : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
-                                  )}>
-                                    {n.toString().padStart(2, '0')}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
+                            <ConsultPurchaseItem
+                              key={purchase.id || pIdx}
+                              purchase={purchase}
+                              onCopyPix={copyPix}
+                              onCopyNumbers={(nums) => {
+                                navigator.clipboard.writeText(nums.join(', '));
+                                alert("Números copiados com sucesso!");
+                              }}
+                              onRequestCancel={(p) => setPurchaseToCancel(p)}
+                            />
                           ))
                         )}
                       </div>
@@ -3542,6 +3829,81 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Confirmação de Cancelamento de Reserva */}
+      <AnimatePresence>
+        {purchaseToCancel && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 sm:p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !cancelling && setPurchaseToCancel(null)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden border border-slate-100 z-10 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <Trash2 className="w-8 h-8" />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Cancelar Reserva</h3>
+                <p className="text-sm font-medium text-slate-600 leading-relaxed">
+                  Tem certeza que deseja cancelar esses números? Eles voltarão a ficar disponíveis para outras pessoas.
+                </p>
+              </div>
+
+              {purchaseToCancel.numbers && (
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 text-left">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Números a serem liberados:</p>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                    {purchaseToCancel.numbers.map((n: number) => (
+                      <span key={n} className="px-2.5 py-1 bg-white text-slate-700 rounded-lg text-xs font-black border border-slate-200">
+                        {n.toString().padStart(2, '0')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={cancelling}
+                  onClick={handleConfirmCancelPurchase}
+                  className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl font-black text-base shadow-xl shadow-rose-600/20 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {cancelling ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Liberando números...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-5 h-5" />
+                      <span>Sim, cancelar e liberar números</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={cancelling}
+                  onClick={() => setPurchaseToCancel(null)}
+                  className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold text-sm transition-colors active:scale-[0.98]"
+                >
+                  Manter reserva
+                </button>
               </div>
             </motion.div>
           </div>

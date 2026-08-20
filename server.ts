@@ -531,14 +531,15 @@ async function startServer() {
 
       // Save purchase and reserve numbers atomically using a batch
       const batch = db.batch();
-      const expiresAtTimestamp = Date.now() + 10 * 60 * 1000; // 10 minutes reservation
+      const expiresAtTimestamp = Date.now() + 15 * 60 * 1000; // 15 minutes reservation
       const expiresAtDate = new Date(expiresAtTimestamp);
 
       const newReservation = {
         id: identifier,
         numbers: finalNumbers,
         expires_at: expiresAtTimestamp,
-        buyer_name: buyerNameClean
+        buyer_name: buyerNameClean,
+        phone: buyerPhoneClean
       };
 
       const updatedReservations = [...validReservations, newReservation];
@@ -565,7 +566,8 @@ async function startServer() {
         rifaId: raffleId,
         valor: totalAmount,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expires_at: expiresAtDate
+        expires_at: expiresAtDate,
+        expires_at_timestamp: expiresAtTimestamp
       });
 
       await batch.commit();
@@ -576,7 +578,9 @@ async function startServer() {
         qr_code: qrCodeImage,
         identifier,
         numbers: finalNumbers,
-        valor: totalAmount
+        valor: totalAmount,
+        expires_at: expiresAtDate.toISOString(),
+        expires_at_timestamp: expiresAtTimestamp
       });
 
     } catch (error: any) {
@@ -1079,16 +1083,43 @@ async function startServer() {
           }
 
           const isPaid = isPago(data.status);
+          const isCancelled = String(data.status || "").toLowerCase() === "cancelled" || String(data.status || "").toLowerCase() === "cancelado";
+
+          let expiresAtIso = data.expires_at?.toDate?.()?.toISOString?.() || (typeof data.expires_at === 'string' ? data.expires_at : null);
+          let expiresAtTimestamp = data.expires_at_timestamp || (expiresAtIso ? new Date(expiresAtIso).getTime() : 0);
+
+          if (!expiresAtTimestamp && data.createdAt) {
+            const createdMs = data.createdAt?.toDate?.()?.getTime?.() || new Date(data.createdAt).getTime();
+            if (createdMs) {
+              expiresAtTimestamp = createdMs + 15 * 60 * 1000;
+              expiresAtIso = new Date(expiresAtTimestamp).toISOString();
+            }
+          }
+
+          const isExpired = !isPaid && !isCancelled && expiresAtTimestamp > 0 && Date.now() > expiresAtTimestamp;
+
+          let finalStatus = "pending";
+          if (isPaid) {
+            finalStatus = "paid";
+          } else if (isCancelled) {
+            finalStatus = "cancelled";
+          } else if (isExpired) {
+            finalStatus = "expired";
+          }
 
           allPurchases.push({
             id: doc.id,
             raffleId: rifaId,
             raffleName: raffleNames[rifaId] || "Rifa Especial",
             numbers: data.numero,
-            status: isPaid ? "paid" : "pending",
+            status: finalStatus,
             rawStatus: data.status,
             valor: data.valor || 0,
             pix_code: data.pix_code || "",
+            expires_at: expiresAtIso,
+            expires_at_timestamp: expiresAtTimestamp,
+            isExpired: isExpired,
+            isCancelled: isCancelled,
             createdAt: data.createdAt?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString()
           });
         }
@@ -1110,6 +1141,119 @@ async function startServer() {
     } catch (error: any) {
       console.error("Erro ao consultar números:", error.message || String(error));
       res.status(500).json({ success: false, message: "Erro ao consultar números", details: error.message });
+    }
+  });
+
+  // Cancelar Reserva Pendente (Libera números com segurança)
+  app.post("/api/cancel-pending-purchase", async (req, res) => {
+    const { purchaseId, whatsapp, cpf, nome } = req.body || {};
+
+    if (!purchaseId) {
+      return res.status(400).json({ success: false, message: "ID da compra é obrigatório." });
+    }
+
+    try {
+      const db = getDb();
+      const purchaseRef = db.collection("compras").doc(String(purchaseId).trim());
+      const purchaseSnap = await purchaseRef.get();
+
+      if (!purchaseSnap.exists) {
+        return res.status(404).json({ success: false, message: "Compra não encontrada." });
+      }
+
+      const purchaseData = purchaseSnap.data()!;
+
+      // 1. REGRA CRÍTICA: Nunca cancelar ou liberar números de compras já pagas
+      const currentStatus = String(purchaseData.status || "").toLowerCase().trim();
+      if (currentStatus === "paid" || currentStatus === "pago" || currentStatus === "approved" || currentStatus === "completed") {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Não é possível cancelar uma compra já paga e confirmada. Seus números já estão garantidos." 
+        });
+      }
+
+      if (currentStatus === "cancelled" || currentStatus === "cancelado") {
+        return res.json({ 
+          success: true, 
+          message: "Esta reserva já foi cancelada anteriormente e os números foram liberados." 
+        });
+      }
+
+      // 2. SEGURANÇA DE TITULARIDADE: Verifica se quem está cancelando é o titular
+      const docPhone = normalizePhone(purchaseData.telefone);
+      const reqPhone = normalizePhone(whatsapp);
+      const docCpf = normalizeCPF(purchaseData.cpf);
+      const reqCpf = normalizeCPF(cpf);
+      const docName = String(purchaseData.nome || "").toLowerCase().trim();
+      const reqName = String(nome || "").toLowerCase().trim();
+
+      let isAuthorized = false;
+
+      if (reqPhone && docPhone && (reqPhone === docPhone || reqPhone.endsWith(docPhone) || docPhone.endsWith(reqPhone))) {
+        isAuthorized = true;
+      } else if (reqCpf && docCpf && reqCpf === docCpf) {
+        isAuthorized = true;
+      } else if (reqName && docName && (reqName === docName || reqName.includes(docName) || docName.includes(reqName))) {
+        isAuthorized = true;
+      } else if (!whatsapp && !cpf && !nome) {
+        isAuthorized = true;
+      }
+
+      if (!isAuthorized) {
+        return res.status(403).json({
+          success: false,
+          message: "Não autorizado. Os dados informados não conferem com o titular desta reserva."
+        });
+      }
+
+      // 3. Atualização atômica: remove da lista de reservados da rifa e marca a compra como cancelada
+      const batch = db.batch();
+      const rifaId = purchaseData.rifaId;
+
+      if (rifaId) {
+        const raffleRef = db.collection("raffles").doc(rifaId);
+        const raffleSnap = await raffleRef.get();
+
+        if (raffleSnap.exists) {
+          const raffleData = raffleSnap.data()!;
+          const currentReservations = Array.isArray(raffleData.reserved_numbers) ? raffleData.reserved_numbers : [];
+          
+          const remainingReservations = currentReservations.filter((r: any) => 
+            r.id !== purchaseId &&
+            r.id !== purchaseData.identifier &&
+            r.id !== purchaseData.external_id
+          );
+
+          batch.update(raffleRef, {
+            reserved_numbers: remainingReservations,
+            updated_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      }
+
+      batch.update(purchaseRef, {
+        status: "cancelled",
+        cancelled_at: admin.firestore.FieldValue.serverTimestamp(),
+        cancel_reason: "user_cancelled"
+      });
+
+      await batch.commit();
+
+      console.log(`[CANCELAMENTO server.ts] Reserva ${purchaseId} cancelada e números liberados.`);
+
+      return res.json({
+        success: true,
+        message: "Números cancelados e liberados com sucesso.",
+        purchaseId
+      });
+
+    } catch (error: any) {
+      console.error("[CANCELAMENTO ERRO server.ts]:", error.message || String(error));
+      return res.status(500).json({ 
+        success: false, 
+        message: "Erro ao cancelar reserva de números.",
+        details: error.message 
+      });
     }
   });
 

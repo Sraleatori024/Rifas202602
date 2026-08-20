@@ -144,16 +144,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const status = String(data.status || "pending").toLowerCase();
         const isPaid = isPaidStatus(status);
+        const isCancelled = status === "cancelled" || status === "cancelado";
+
+        let expiresAtIso = data.expires_at?.toDate?.()?.toISOString?.() || (typeof data.expires_at === 'string' ? data.expires_at : null);
+        let expiresAtTimestamp = data.expires_at_timestamp || (expiresAtIso ? new Date(expiresAtIso).getTime() : 0);
+
+        // Se a compra foi criada sem expires_at explícito, calcula 15 minutos a partir de createdAt
+        if (!expiresAtTimestamp && data.createdAt) {
+          const createdMs = data.createdAt?.toDate?.()?.getTime?.() || new Date(data.createdAt).getTime();
+          if (createdMs) {
+            expiresAtTimestamp = createdMs + 15 * 60 * 1000;
+            expiresAtIso = new Date(expiresAtTimestamp).toISOString();
+          }
+        }
+
+        const isExpired = !isPaid && !isCancelled && expiresAtTimestamp > 0 && Date.now() > expiresAtTimestamp;
+
+        let finalStatus = "pending";
+        if (isPaid) {
+          finalStatus = "paid";
+        } else if (isCancelled) {
+          finalStatus = "cancelled";
+        } else if (isExpired) {
+          finalStatus = "expired";
+        }
 
         allPurchases.push({
           id: doc.id,
           raffleId: rifaId,
           raffleName: raffleNames[rifaId] || "Rifa Especial",
           numbers: data.numero,
-          status: isPaid ? "paid" : "pending",
+          status: finalStatus,
           rawStatus: data.status,
           valor: data.valor || 0,
           pix_code: data.pix_code || "",
+          expires_at: expiresAtIso,
+          expires_at_timestamp: expiresAtTimestamp,
+          isExpired: isExpired,
+          isCancelled: isCancelled,
           createdAt: data.createdAt?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString()
         });
       }

@@ -548,14 +548,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Save purchase with pending_payment status and reserve numbers atomically
     const batch = db.batch();
-    const expiresAtTimestamp = Date.now() + 10 * 60 * 1000; // 10 minutes reservation
+    const expiresAtTimestamp = Date.now() + 15 * 60 * 1000; // 15 minutes reservation
     const expiresAtDate = new Date(expiresAtTimestamp);
 
     const newReservation = {
       id: identifier,
       numbers: finalNumbers,
       expires_at: expiresAtTimestamp,
-      buyer_name: buyerNameClean
+      buyer_name: buyerNameClean,
+      phone: normalizePhone(buyer.whatsapp)
     };
 
     const updatedReservations = [...validReservations, newReservation];
@@ -582,7 +583,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       rifaId: raffleId,
       valor: totalAmount,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      expires_at: expiresAtDate
+      expires_at: expiresAtDate,
+      expires_at_timestamp: expiresAtTimestamp
     });
 
     await batch.commit();
@@ -594,7 +596,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       identifier: identifier,
       numbers: finalNumbers,
       valor: totalAmount,
-      cpf: payload.client.cpf
+      cpf: payload.client.cpf,
+      expires_at: expiresAtDate.toISOString(),
+      expires_at_timestamp: expiresAtTimestamp
     });
 
   } catch (error: any) {
