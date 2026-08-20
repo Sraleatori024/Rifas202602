@@ -3086,6 +3086,13 @@ export default function App() {
     }
   };
 
+  const handleNewConsultation = () => {
+    setConsultResult(null);
+    setPhone('');
+    setCpf('');
+    setSearchQuery('');
+  };
+
   const handleConsult = async (e: React.FormEvent) => {
     e.preventDefault();
     setConsulting(true);
@@ -3460,19 +3467,23 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-4 pt-6 border-t border-slate-100">
+                    <div className="flex flex-col gap-3 pt-6 border-t border-slate-100">
                       <button 
-                        onClick={() => setShowConsult(false)} 
-                        className="w-full bg-primary text-white py-5 rounded-2xl font-black text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                        type="button"
+                        onClick={handleNewConsultation} 
+                        className="w-full bg-primary text-white py-4 sm:py-5 rounded-2xl font-black text-lg sm:text-xl shadow-2xl shadow-primary/30 hover:shadow-primary/40 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
                       >
-                        <Ticket className="w-6 h-6" />
-                        Voltar para a rifa
+                        <Search className="w-6 h-6" />
+                        <span>Consultar outro número</span>
                       </button>
+
                       <button 
-                        onClick={() => { setConsultResult(null); setPhone(''); setCpf(''); }} 
-                        className="w-full py-2 text-sm font-black text-slate-400 hover:text-primary transition-colors uppercase tracking-widest"
+                        type="button"
+                        onClick={() => setShowConsult(false)} 
+                        className="w-full py-3.5 text-sm sm:text-base font-black text-slate-400 hover:text-slate-900 transition-colors flex items-center justify-center gap-2"
                       >
-                        Consultar outro número
+                        <Ticket className="w-5 h-5" />
+                        <span>Voltar para a rifa</span>
                       </button>
                     </div>
                   </div>
