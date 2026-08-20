@@ -1,12 +1,34 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb, admin } from '../lib/firebase-admin.js';
 
-const normalizePhone = (phone: string) => {
+const normalizePhone = (phone: string | number | undefined | null) => {
   let clean = String(phone || "").replace(/\D/g, "");
+  // Se começar com 0 e tiver 11 ou 12 dígitos, remove o zero inicial (ex: 011999999999 -> 11999999999)
+  if (clean.startsWith("0") && (clean.length === 11 || clean.length === 12)) {
+    clean = clean.substring(1);
+  }
+  // Se começar com 55 e tiver 12 ou 13 dígitos, remove o 55 para busca consistente
   if (clean.startsWith("55") && (clean.length === 12 || clean.length === 13)) {
     clean = clean.substring(2);
   }
   return clean;
+};
+
+const normalizeName = (name: string | undefined | null): string => {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const areNamesMatching = (name1: string | undefined | null, name2: string | undefined | null): boolean => {
+  const n1 = normalizeName(name1);
+  const n2 = normalizeName(name2);
+  if (!n1 || !n2) return true;
+  return n1 === n2;
 };
 
 const isPaidStatus = (status: string) => {

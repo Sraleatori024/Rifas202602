@@ -1,13 +1,35 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb, admin } from '../lib/firebase-admin.js';
 
-const normalizePhone = (phone: string) => {
+const normalizePhone = (phone: string | number | undefined | null) => {
   let clean = String(phone || "").replace(/\D/g, "");
+  // Se começar com 0 e tiver 11 ou 12 dígitos, remove o zero inicial (ex: 011999999999 -> 11999999999)
+  if (clean.startsWith("0") && (clean.length === 11 || clean.length === 12)) {
+    clean = clean.substring(1);
+  }
   // Se começar com 55 e tiver 12 ou 13 dígitos, remove o 55 para busca consistente
   if (clean.startsWith("55") && (clean.length === 12 || clean.length === 13)) {
     clean = clean.substring(2);
   }
   return clean;
+};
+
+// Normalização de nomes para comparação precisa e insensível a acentuação/caixa
+const normalizeName = (name: string | undefined | null): string => {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove acentos / diacríticos
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "") // Remove caracteres especiais
+    .replace(/\s+/g, " ") // Colapsa múltiplos espaços
+    .trim();
+};
+
+const areNamesMatching = (name1: string | undefined | null, name2: string | undefined | null): boolean => {
+  const n1 = normalizeName(name1);
+  const n2 = normalizeName(name2);
+  if (!n1 || !n2) return true;
+  return n1 === n2;
 };
 const normalizeCPF = (cpf: string) => {
   const clean = cpf ? String(cpf).replace(/\D/g, "") : "";
@@ -259,6 +281,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         code: "TELEFONE_INVALIDO",
         message: "WhatsApp inválido. Por favor, insira o DDD e o número completo, ex: (11) 99999-9999"
       });
+    }
+
+    // VERIFICAÇÃO DE CONFLITO: Telefone já associado a outro nome cadastrado
+    try {
+      let existingRegisteredName: string | null = null;
+
+      // 1. Busca na coleção users pelo telefone normalizado
+      const userSnap = await db.collection("users").doc(normalizedPhoneVal).get();
+      if (userSnap.exists && userSnap.data()?.name) {
+        const uName = String(userSnap.data()!.name).trim();
+        if (uName.length > 0) {
+          existingRegisteredName = uName;
+        }
+      }
+
+      // 2. Se não encontrou no users, verifica compras anteriores pelo mesmo telefone
+      if (!existingRegisteredName) {
+        const prevPurchasesSnap = await db.collection("compras")
+          .where("telefone", "==", normalizedPhoneVal)
+          .limit(5)
+          .get();
+
+        if (!prevPurchasesSnap.empty) {
+          for (const pDoc of prevPurchasesSnap.docs) {
+            const pData = pDoc.data();
+            if (pData?.nome && String(pData.nome).trim().length > 0) {
+              existingRegisteredName = String(pData.nome).trim();
+              break;
+            }
+          }
+        }
+      }
+
+      // 3. Se existir um nome registrado anteriormente para este WhatsApp, valida se é a mesma pessoa
+      if (existingRegisteredName) {
+        const matches = areNamesMatching(existingRegisteredName, buyerNameClean);
+        if (!matches) {
+          console.warn(`[PAYMENT CONFLITO] WhatsApp ${normalizedPhoneVal} já está associado a outro cadastro. Bloqueando compra.`);
+          return res.status(400).json({
+            success: false,
+            code: "PHONE_NAME_MISMATCH",
+            message: "Este WhatsApp já está associado a outro cadastro. Verifique o número informado ou utilize o WhatsApp correto."
+          });
+        }
+      }
+    } catch (checkErr: any) {
+      console.error("[PAYMENT] Erro ao validar telefone existente:", checkErr.message || String(checkErr));
     }
 
     const normalizedCPFVal = normalizeCPF(buyer.cpf);

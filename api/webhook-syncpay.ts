@@ -1,8 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb, admin } from '../lib/firebase-admin.js';
 
-const normalizePhone = (phone: string) => {
+const normalizePhone = (phone: string | number | undefined | null) => {
   let clean = String(phone || "").replace(/\D/g, "");
+  if (clean.startsWith("0") && (clean.length === 11 || clean.length === 12)) {
+    clean = clean.substring(1);
+  }
   if (clean.startsWith("55") && (clean.length === 12 || clean.length === 13)) {
     clean = clean.substring(2);
   }
