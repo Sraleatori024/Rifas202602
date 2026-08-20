@@ -366,17 +366,35 @@ async function startServer() {
         }
       }
 
-      // Validate all selected numbers are actually available (validação em memória - 0 leituras extras)
-      const occupiedNumbers: number[] = Array.isArray(raffleData.occupied_numbers) 
-        ? raffleData.occupied_numbers.map(Number) 
+      // Validate numbers against paid_numbers and active reserved_numbers in memory (0 extra reads)
+      const nowMs = Date.now();
+      const paidNumbers: number[] = Array.isArray(raffleData.paid_numbers) 
+        ? raffleData.paid_numbers.map(Number) 
         : [];
-      const occupiedSet = new Set(occupiedNumbers);
-      const unavailableNumbers = finalNumbers.filter(n => occupiedSet.has(n));
+      const validReservations = Array.isArray(raffleData.reserved_numbers)
+        ? raffleData.reserved_numbers.filter((r: any) => Number(r.expires_at) > nowMs)
+        : [];
+      const reservedNumbers: number[] = validReservations.flatMap((r: any) => 
+        Array.isArray(r.numbers) ? r.numbers.map(Number) : []
+      );
 
-      if (unavailableNumbers.length > 0) {
+      const paidSet = new Set(paidNumbers);
+      const reservedSet = new Set(reservedNumbers);
+
+      const unavailablePaid = finalNumbers.filter(n => paidSet.has(n));
+      const unavailableReserved = finalNumbers.filter(n => reservedSet.has(n));
+
+      if (unavailablePaid.length > 0) {
         return res.status(400).json({
           success: false,
-          message: `Infelizmente, os seguintes números já foram reservados ou pagos por outro cliente: ${unavailableNumbers.join(", ")}. Por favor, altere sua seleção.`
+          message: `Infelizmente, os seguintes números já foram pagos por outro cliente: ${unavailablePaid.join(", ")}. Por favor, altere sua seleção.`
+        });
+      }
+
+      if (unavailableReserved.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Infelizmente, os seguintes números estão temporariamente reservados em processo de pagamento: ${unavailableReserved.join(", ")}. Por favor, escolha outros números.`
         });
       }
 
@@ -407,29 +425,25 @@ async function startServer() {
 
       // Save purchase and reserve numbers atomically using a batch
       const batch = db.batch();
-      const expiresAtDate = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes reservation
+      const expiresAtTimestamp = Date.now() + 10 * 60 * 1000; // 10 minutes reservation
+      const expiresAtDate = new Date(expiresAtTimestamp);
 
-      // 1. Atualiza documento principal da rifa com os novos números ocupados
+      const newReservation = {
+        id: identifier,
+        numbers: finalNumbers,
+        expires_at: expiresAtTimestamp,
+        buyer_name: buyerNameClean
+      };
+
+      const updatedReservations = [...validReservations, newReservation];
+
+      // 1. Atualiza apenas as reservas temporárias no documento da rifa (NÃO adiciona em paid_numbers)
       batch.update(raffleRef, {
-        occupied_numbers: admin.firestore.FieldValue.arrayUnion(...finalNumbers),
+        reserved_numbers: updatedReservations,
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      // 2. Reserva cada número na subcoleção (sem leitura prévia)
-      const numbersRef = raffleRef.collection("numbers");
-      for (const num of finalNumbers) {
-        batch.set(numbersRef.doc(String(num)), {
-          number: Number(num),
-          status: 'reserved',
-          expires_at: expiresAtDate,
-          buyer_name: buyerNameClean,
-          buyer_phone: buyerPhoneClean,
-          purchase_id: identifier,
-          updated_at: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-      }
-
-      // 2. Save the pending purchase
+      // 2. Salva a compra com status rigorosamente "pending_payment"
       const compraRef = db.collection("compras").doc(identifier);
       batch.set(compraRef, {
         nome: buyerNameClean,
@@ -437,7 +451,7 @@ async function startServer() {
         cpf: normalizeCPF(buyer.cpf),
         pix_code: pix_code,
         identifier: identifier,
-        status: "pending",
+        status: "pending_payment",
         numero: finalNumbers,
         quantity: quantityNeeded + bonusNumbers,
         rifaId: raffleId,
@@ -562,8 +576,13 @@ async function startServer() {
       rouletteEligible = true;
     }
 
+    // Remove the reservation from reserved_numbers and add to paid_numbers
+    const currentReservations = Array.isArray(raffleData.reserved_numbers) ? raffleData.reserved_numbers : [];
+    const remainingReservations = currentReservations.filter((r: any) => r.id !== paymentRef.id && r.id !== purchaseData?.identifier);
+
     batch.update(raffleRef, {
-      occupied_numbers: admin.firestore.FieldValue.arrayUnion(...finalNumbers),
+      paid_numbers: admin.firestore.FieldValue.arrayUnion(...finalNumbers),
+      reserved_numbers: remainingReservations,
       sold_count: admin.firestore.FieldValue.increment(finalNumbers.length),
       revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
       updated_at: admin.firestore.FieldValue.serverTimestamp()

@@ -58,6 +58,13 @@ export interface PromotionConfig {
   min_purchase_quantity: number;
 }
 
+export interface RaffleReservation {
+  id: string;
+  numbers: number[];
+  expires_at: number;
+  buyer_name?: string;
+}
+
 export interface Raffle {
   id: string;
   name: string;
@@ -80,6 +87,9 @@ export interface Raffle {
   draw_manually_released?: boolean;
   sold_count?: number;
   revenue?: number;
+  paid_numbers?: number[];
+  reserved_numbers?: RaffleReservation[];
+  occupied_numbers?: number[];
   prizes?: Prize[];
   packages?: RafflePackage[];
   winners?: Winner[];
@@ -88,10 +98,10 @@ export interface Raffle {
 }
 
 export interface RaffleNumber {
-  id: number;
-  raffle_id: number;
+  id: number | string;
+  raffle_id?: number | string;
   number: number;
-  status: 'available' | 'reserved' | 'pago';
+  status: 'available' | 'reserved' | 'paid' | 'pago' | 'pending_payment' | 'expired' | 'cancelled';
   buyer_name?: string;
   buyer_whatsapp?: string;
   buyer_instagram?: string;

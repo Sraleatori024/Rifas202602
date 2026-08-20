@@ -106,7 +106,7 @@ async function processPayment(docSnap: any, res: VercelResponse) {
   const data = docSnap.data();
   const paymentId = docSnap.id;
   
-  if (data?.status === "pago") {
+  if (data?.status === "paid" || data?.status === "pago") {
     return res.json({ 
       success: true, 
       message: "Pagamento já confirmado! Boa sorte 🍀" 
@@ -121,7 +121,7 @@ async function processPayment(docSnap: any, res: VercelResponse) {
   const raffleData = raffleSnap.exists ? raffleSnap.data() : {};
   const numbersRef = raffleRef.collection("numbers");
 
-  console.log(`Webhook: Confirmando ${numero.length} números para a rifa ${rifaId}`);
+  console.log(`Webhook: Confirmando ${numero.length} números como PAGOS para a rifa ${rifaId}`);
 
   // Handle large number of numbers by chunking
   const numbersChunks = [];
@@ -133,7 +133,7 @@ async function processPayment(docSnap: any, res: VercelResponse) {
     for (const num of chunk) {
       batch.set(numbersRef.doc(String(num)), {
         number: Number(num),
-        status: 'pago',
+        status: 'paid',
         buyer_name: nome,
         buyer_whatsapp: telefone,
         updated_at: admin.firestore.FieldValue.serverTimestamp()
@@ -141,8 +141,13 @@ async function processPayment(docSnap: any, res: VercelResponse) {
     }
   }
 
+  // Remove the reservation from reserved_numbers and add to paid_numbers
+  const currentReservations = Array.isArray(raffleData.reserved_numbers) ? raffleData.reserved_numbers : [];
+  const remainingReservations = currentReservations.filter((r: any) => r.id !== paymentId && r.id !== data?.identifier);
+
   batch.update(raffleRef, {
-    occupied_numbers: admin.firestore.FieldValue.arrayUnion(...numero),
+    paid_numbers: admin.firestore.FieldValue.arrayUnion(...numero),
+    reserved_numbers: remainingReservations,
     sold_count: admin.firestore.FieldValue.increment(numero.length),
     revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
     updated_at: admin.firestore.FieldValue.serverTimestamp()

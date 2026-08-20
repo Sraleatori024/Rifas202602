@@ -128,22 +128,6 @@ const formatConfirmDate = (paidAt: any) => {
   return d.toLocaleString('pt-BR');
 };
 
-const confirmPaymentDirectly = async (targetId: string) => {
-  if (!targetId) return false;
-  try {
-    const response = await fetch('/api/webhook-syncpay', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: safeStringify({ status: 'paid', external_id: targetId })
-    });
-    const data = await response.json();
-    return data.success;
-  } catch (err: any) {
-    console.error("Erro ao confirmar pagamento:", err.message || String(err));
-    return false;
-  }
-};
-
 // --- Components ---
 
 // --- Components ---
@@ -479,22 +463,22 @@ const RaffleDetails = () => {
   const [stats, setStats] = useState({ total: 0, sold: 0, available: 0 });
   const [checkingPayment, setCheckingPayment] = useState(false);
 
-  const handleConfirmPaymentDirectly = async (idToConfirm?: string) => {
-    const targetId = idToConfirm || purchaseId;
-    if (!targetId) return;
+  const handleCheckPaymentStatus = async () => {
+    if (!purchaseId) return;
     setCheckingPayment(true);
     try {
-      const response = await fetch('/api/webhook-syncpay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: safeStringify({ status: 'paid', external_id: targetId })
-      });
-      const data = await response.json();
-      if (data.success) {
-        console.log("FRONTEND: Pagamento confirmado via chamada direta ao webhook!");
+      const snap = await getDoc(doc(db, "compras", purchaseId));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (isPago(data.status)) {
+          setConfirmedPurchase({ id: snap.id, ...data });
+          setStep(4);
+        } else {
+          alert("Aguardando confirmação bancária do PIX. O sistema confirmará automaticamente assim que o pagamento for aprovado.");
+        }
       }
     } catch (err: any) {
-      console.error("Erro ao confirmar pagamento:", err.message || String(err));
+      console.error("Erro ao verificar status:", err.message || String(err));
     } finally {
       setCheckingPayment(false);
     }
@@ -504,7 +488,6 @@ const RaffleDetails = () => {
     if (!raffleId) return;
     
     const raffleRef = doc(db, "raffles", raffleId);
-    const numbersRef = collection(db, "raffles", raffleId, "numbers");
 
     const unsubRaffle = onSnapshot(raffleRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -512,23 +495,39 @@ const RaffleDetails = () => {
         setRaffle(data);
 
         const total = Number(data.total_numbers) || 100;
-        const occupiedList: number[] = Array.isArray(data.occupied_numbers) 
-          ? data.occupied_numbers.map(Number) 
-          : [];
-        const occupiedSet = new Set(occupiedList);
-        const soldCount = Math.max(occupiedList.length, Number(data.sold_count) || 0);
+        const nowMs = Date.now();
 
-        // Sintetiza a lista de números diretamente na memória (1 única leitura de documento!)
+        // 1. Números Efetivamente Pagos e Confirmados
+        const paidList: number[] = Array.isArray(data.paid_numbers) 
+          ? data.paid_numbers.map(Number) 
+          : [];
+        const paidSet = new Set(paidList);
+
+        // 2. Números Temporariamente Reservados (dentro do prazo de 10 minutos)
+        const validReservations = Array.isArray(data.reserved_numbers)
+          ? data.reserved_numbers.filter((r: any) => Number(r.expires_at) > nowMs)
+          : [];
+        const reservedList: number[] = validReservations.flatMap((r: any) => 
+          Array.isArray(r.numbers) ? r.numbers.map(Number) : []
+        );
+        const reservedSet = new Set(reservedList);
+
+        const soldCount = paidList.length;
+        const reservedCount = reservedList.length;
+
+        // Sintetiza a lista de números diretamente na memória respeitando status real
         const generatedNumbers: RaffleNumber[] = Array.from({ length: total }, (_, i) => ({
           id: String(i),
           number: i,
-          status: occupiedSet.has(i) ? 'paid' : 'available',
-          userId: null,
-          userName: null
+          status: paidSet.has(i) ? 'paid' : (reservedSet.has(i) ? 'reserved' : 'available')
         }));
 
         setNumbers(generatedNumbers);
-        setStats({ total, sold: soldCount, available: Math.max(0, total - soldCount) });
+        setStats({ 
+          total, 
+          sold: soldCount, 
+          available: Math.max(0, total - soldCount - reservedCount) 
+        });
         setLoading(false);
       } else {
         setLoading(false);
@@ -1157,19 +1156,19 @@ const RaffleDetails = () => {
 
               <div className="flex flex-col gap-3">
                 <button 
-                  onClick={() => handleConfirmPaymentDirectly()}
+                  onClick={() => handleCheckPaymentStatus()}
                   disabled={checkingPayment}
                   className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm hover:bg-emerald-700 transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
                 >
                   {checkingPayment ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Verificando pagamento...</span>
+                      <span>Consultando status no banco...</span>
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-5 h-5 text-emerald-200" />
-                      <span>Já fiz o pagamento PIX? Clique aqui para verificar</span>
+                      <span>Já realizou o PIX? Atualizar status</span>
                     </>
                   )}
                 </button>
@@ -3405,29 +3404,16 @@ export default function App() {
                                   </span>
                                   <p className="text-[10px] font-bold text-slate-500">{purchase.numbers.length} números reservados</p>
                                   
-                                  {!isPago(purchase.status) && (
+                                  {!isPago(purchase.status) && purchase.pix_code && (
                                     <div className="flex flex-col items-end gap-1 mt-2">
-                                      {purchase.pix_code && (
-                                        <button 
-                                          onClick={() => {
-                                            navigator.clipboard.writeText(purchase.pix_code);
-                                            alert("Código PIX copiado com sucesso!");
-                                          }}
-                                          className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md uppercase tracking-wider transition-colors"
-                                        >
-                                          Copiar Código PIX
-                                        </button>
-                                      )}
                                       <button 
-                                        onClick={async () => {
-                                          await confirmPaymentDirectly(purchase.id);
-                                          // Re-executa busca de consulta para atualizar estado na tela
-                                          const eFake = { preventDefault: () => {} } as any;
-                                          handleConsult(eFake);
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(purchase.pix_code);
+                                          alert("Código PIX copiado com sucesso!");
                                         }}
-                                        className="text-[10px] font-black text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-md uppercase tracking-wider transition-colors"
+                                        className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md uppercase tracking-wider transition-colors"
                                       >
-                                        ⚡ Confirmar Pagamento
+                                        Copiar Código PIX
                                       </button>
                                     </div>
                                   )}
