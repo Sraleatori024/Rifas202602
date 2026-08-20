@@ -312,127 +312,158 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 async function processPayment(docSnap: any, res: VercelResponse) {
   const db = getDb();
-  const purchaseData = docSnap.data();
   const paymentRef = docSnap.ref;
   const paymentId = docSnap.id;
-  
-  // IDEMPOTENCY: Check if already paid
-  if (purchaseData.status === "paid" || purchaseData.status === "pago") {
-    console.log(`[API Webhook Idempotência] Compra ${paymentId} já confirmada anteriormente. Resposta 200 OK sem duplicar contadores.`);
-    return res.status(200).json({ 
-      success: true, 
-      idempotent: true,
-      message: "Pagamento já confirmado! Boa sorte 🍀" 
+
+  try {
+    const result = await db.runTransaction(async (transaction: any) => {
+      const freshPurchaseSnap = await transaction.get(paymentRef);
+      if (!freshPurchaseSnap.exists) {
+        throw new Error("Compra não encontrada na transação.");
+      }
+
+      const purchaseData = freshPurchaseSnap.data();
+      const currentStatus = String(purchaseData.status || "").toLowerCase().trim();
+
+      // 1. IDEMPOTENCY: Check if already paid inside transaction
+      if (currentStatus === "paid" || currentStatus === "pago" || currentStatus === "approved") {
+        console.log(`[API Webhook Idempotência] Compra ${paymentId} já confirmada anteriormente.`);
+        return { alreadyPaid: true, purchaseData };
+      }
+
+      const { rifaId, numero, nome, telefone, valor, quantity } = purchaseData;
+      if (!rifaId) {
+        throw new Error("rifaId missing in purchase document");
+      }
+
+      const raffleRef = db.collection("raffles").doc(rifaId);
+      const raffleSnap = await transaction.get(raffleRef);
+      if (!raffleSnap.exists) {
+        throw new Error("Rifa não encontrada");
+      }
+
+      const raffleData = raffleSnap.data()!;
+      let numbersToConfirm: number[] = Array.isArray(numero) ? numero.map(Number) : [];
+
+      const existingPaidNumbers = new Set<number>(
+        Array.isArray(raffleData.paid_numbers) ? raffleData.paid_numbers.map(Number) : []
+      );
+
+      // 2. DETECÇÃO DE CONFLITO ATÔMICA (Sem substituição silenciosa)
+      const conflictingNumbers = numbersToConfirm.filter(n => existingPaidNumbers.has(n));
+      if (conflictingNumbers.length > 0) {
+        console.error(`[API Webhook CONFLITO CRÍTICO] Números ${conflictingNumbers.join(", ")} já foram pagos por outro cliente na rifa ${rifaId}. Compra ${paymentId} marcada com payment_conflict.`);
+        transaction.update(paymentRef, {
+          status: "payment_conflict",
+          conflict_numbers: conflictingNumbers,
+          conflict_detected_at: admin.firestore.FieldValue.serverTimestamp(),
+          webhook_processed_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+        return { conflict: true, conflictingNumbers, purchaseData };
+      }
+
+      // 3. ATUALIZAÇÃO ATÔMICA DA RIFA
+      const currentReservations = Array.isArray(raffleData.reserved_numbers) ? raffleData.reserved_numbers : [];
+      const remainingReservations = currentReservations.filter((r: any) => 
+        r.id !== paymentId && 
+        r.id !== purchaseData?.identifier && 
+        r.id !== purchaseData?.external_id
+      );
+
+      const updatedPaidList = Array.from(new Set([...Array.from(existingPaidNumbers), ...numbersToConfirm]));
+      const existingOccupied = Array.isArray(raffleData.occupied_numbers) ? raffleData.occupied_numbers.map(Number) : [];
+      const updatedOccupiedList = Array.from(new Set([...existingOccupied, ...numbersToConfirm]));
+
+      transaction.update(raffleRef, {
+        reserved_numbers: remainingReservations,
+        paid_numbers: updatedPaidList,
+        occupied_numbers: updatedOccupiedList,
+        sold_count: admin.firestore.FieldValue.increment(numbersToConfirm.length),
+        revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // 4. ELEGIBILIDADE DA ROLETA
+      let rouletteEligible = false;
+      if (raffleData.roulette?.active && Number(valor || 0) >= Number(raffleData.roulette.min_purchase_value || 0)) {
+        rouletteEligible = true;
+      }
+
+      // 5. ATUALIZAÇÃO DA COMPRA
+      transaction.update(paymentRef, {
+        status: "paid",
+        numero: numbersToConfirm,
+        paid_at: admin.firestore.FieldValue.serverTimestamp(),
+        webhook_processed_at: admin.firestore.FieldValue.serverTimestamp(),
+        roulette_eligible: rouletteEligible,
+        roulette_spun: false
+      });
+
+      // 6. HISTÓRICO DO USUÁRIO
+      const cleanPhone = normalizePhone(telefone);
+      if (cleanPhone) {
+        const userRef = db.collection("users").doc(cleanPhone);
+        transaction.set(userRef, {
+          name: nome || '',
+          whatsapp: cleanPhone,
+          purchases: admin.firestore.FieldValue.arrayUnion({
+            rifaId,
+            numero: numbersToConfirm,
+            purchaseId: paymentId,
+            valor: Number(valor || 0),
+            paid_at: new Date().toISOString()
+          })
+        }, { merge: true });
+      }
+
+      return { success: true, numbersToConfirm, rifaId, nome, telefone, valor };
     });
-  }
 
-  const { rifaId, numero, nome, telefone, valor, quantity } = purchaseData;
+    if (result.alreadyPaid) {
+      return res.status(200).json({ 
+        success: true, 
+        idempotent: true, 
+        message: "Pagamento já confirmado! Boa sorte 🍀" 
+      });
+    }
 
-  if (!rifaId) {
-    console.error(`[API Webhook Erro] Documento de compra ${paymentId} sem rifaId.`);
-    return res.status(400).json({ error: "rifaId missing in purchase document" });
-  }
+    if (result.conflict) {
+      return res.status(200).json({
+        success: false,
+        conflict: true,
+        message: "Conflito detectado: número já pago anteriormente por outro comprador. Compra registrada para suporte.",
+        conflict_numbers: result.conflictingNumbers
+      });
+    }
 
-  const raffleRef = db.collection("raffles").doc(rifaId);
-  const raffleSnap = await raffleRef.get();
-  
-  if (!raffleSnap.exists) {
-    console.error(`[API Webhook Erro] Rifa ${rifaId} não encontrada.`);
-    return res.status(404).json({ error: "Rifa não encontrada" });
-  }
-
-  const raffleData = raffleSnap.data()!;
-  let finalNumbers: number[] = Array.isArray(numero) ? numero.map(Number) : [];
-
-  // Automatic raffle number generation if not defined
-  if (raffleData.type === 'automatic' && finalNumbers.length === 0) {
-    finalNumbers = await generateUniqueNumbers(rifaId, Number(quantity) || 1, Number(raffleData.total_numbers) || 1000000);
-  }
-
-  console.log(`[API Webhook] Confirmando ${finalNumbers.length} números como PAGOS para a rifa ${rifaId} (Cliente: ${nome})`);
-
-  const batch = db.batch();
-  const numbersRef = raffleRef.collection("numbers");
-
-  // Update subcollection numbers in chunks
-  for (let i = 0; i < finalNumbers.length; i += 30) {
-    const chunk = finalNumbers.slice(i, i + 30);
-    for (const num of chunk) {
-      batch.set(numbersRef.doc(String(num)), {
+    // 7. Atualização dos documentos individuais de número em background (merge seguro)
+    const raffleRef = db.collection("raffles").doc(result.rifaId);
+    const numbersRef = raffleRef.collection("numbers");
+    const numBatch = db.batch();
+    for (const num of result.numbersToConfirm) {
+      numBatch.set(numbersRef.doc(String(num)), {
         number: Number(num),
         status: 'paid',
-        buyer_name: nome || '',
-        buyer_whatsapp: telefone || '',
-        userName: nome || '',
-        userId: telefone || '',
+        buyer_name: result.nome || '',
+        buyer_whatsapp: result.telefone || '',
+        userName: result.nome || '',
+        userId: result.telefone || '',
         purchase_id: paymentId,
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
     }
+    await numBatch.commit().catch((err: any) => console.error("Erro ao atualizar subcoleção numbers:", err.message));
+
+    console.log(`[API Webhook Sucesso Atômico] Pagamento ${paymentId} confirmado e números salvos com sucesso.`);
+    return res.status(200).json({ 
+      success: true, 
+      message: "Pagamento confirmado com sucesso! Boa sorte 🍀",
+      purchase_id: paymentId,
+      numbers: result.numbersToConfirm
+    });
+
+  } catch (err: any) {
+    console.error(`[API Webhook Erro no processamento de pagamento ${paymentId}]:`, err.message || String(err));
+    return res.status(500).json({ error: "Erro interno ao processar pagamento", details: err.message });
   }
-
-  // Remove the reservation from reserved_numbers and add to paid_numbers
-  const currentReservations = Array.isArray(raffleData.reserved_numbers) ? raffleData.reserved_numbers : [];
-  const remainingReservations = currentReservations.filter((r: any) => 
-    r.id !== paymentId && 
-    r.id !== purchaseData?.identifier && 
-    r.id !== purchaseData?.external_id
-  );
-
-  const raffleUpdate: any = {
-    reserved_numbers: remainingReservations,
-    sold_count: admin.firestore.FieldValue.increment(finalNumbers.length),
-    revenue: admin.firestore.FieldValue.increment(Number(valor || 0)),
-    updated_at: admin.firestore.FieldValue.serverTimestamp()
-  };
-
-  if (finalNumbers.length > 0) {
-    raffleUpdate.paid_numbers = admin.firestore.FieldValue.arrayUnion(...finalNumbers);
-    raffleUpdate.occupied_numbers = admin.firestore.FieldValue.arrayUnion(...finalNumbers);
-  }
-
-  batch.update(raffleRef, raffleUpdate);
-
-  // Roulette Eligibility
-  let rouletteEligible = false;
-  if (raffleData.roulette?.active && Number(valor || 0) >= Number(raffleData.roulette.min_purchase_value || 0)) {
-    rouletteEligible = true;
-  }
-
-  // Update purchase document
-  batch.update(paymentRef, {
-    status: "paid",
-    numero: finalNumbers,
-    paid_at: admin.firestore.FieldValue.serverTimestamp(),
-    webhook_processed_at: admin.firestore.FieldValue.serverTimestamp(),
-    roulette_eligible: rouletteEligible,
-    roulette_spun: false
-  });
-
-  // Associate numbers with user history
-  const cleanPhone = normalizePhone(telefone);
-  if (cleanPhone) {
-    const userRef = db.collection("users").doc(cleanPhone);
-    batch.set(userRef, {
-      name: nome || '',
-      whatsapp: cleanPhone,
-      purchases: admin.firestore.FieldValue.arrayUnion({
-        rifaId,
-        numero: finalNumbers,
-        purchaseId: paymentId,
-        valor: Number(valor || 0),
-        paid_at: new Date().toISOString()
-      })
-    }, { merge: true });
-  }
-
-  await batch.commit();
-  console.log(`[API Webhook Sucesso] Pagamento ${paymentId} processado e gravado com sucesso no Firestore.`);
-
-  return res.status(200).json({ 
-    success: true, 
-    message: "Pagamento confirmado com sucesso! Boa sorte 🍀",
-    purchase_id: paymentId,
-    numbers: finalNumbers
-  });
 }

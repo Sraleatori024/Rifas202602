@@ -198,6 +198,30 @@ const cleanupExpiredReservations = async (db: any, raffleId: string) => {
   }
 };
 
+const rollbackReservationServer = async (db: any, raffleRef: any, identifier: string) => {
+  try {
+    await db.runTransaction(async (rollbackTx: any) => {
+      const rSnap = await rollbackTx.get(raffleRef);
+      if (rSnap.exists) {
+        const rData = rSnap.data()!;
+        const currentReservations = Array.isArray(rData.reserved_numbers) ? rData.reserved_numbers : [];
+        const remainingReservations = currentReservations.filter((r: any) => r.id !== identifier);
+        rollbackTx.update(raffleRef, {
+          reserved_numbers: remainingReservations,
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      rollbackTx.update(db.collection("compras").doc(identifier), {
+        status: "payment_creation_failed",
+        cancelled_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    console.log(`[ROLLBACK server.ts] Reserva ${identifier} desfeita e liberada após falha no PIX.`);
+  } catch (rollbackErr: any) {
+    console.error(`[ROLLBACK Erro server.ts] Falha ao desfazer reserva ${identifier}:`, rollbackErr.message);
+  }
+};
+
 const generateUniqueAvailableNumbersOnServer = async (db: any, raffleId: string, quantity: number, totalNumbers: number) => {
   const numbersRef = db.collection("raffles").doc(raffleId).collection("numbers");
   
@@ -364,119 +388,175 @@ async function startServer() {
     try {
       const db = getDb();
       const raffleRef = db.collection("raffles").doc(raffleId);
-      const raffleSnap = await raffleRef.get();
-      
-      if (!raffleSnap.exists) {
-        return res.status(404).json({ success: false, message: "Rifa não encontrada." });
-      }
+      const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const expiresAtTimestamp = Date.now() + 15 * 60 * 1000; // 15 minutes reservation
+      const expiresAtDate = new Date(expiresAtTimestamp);
 
-      const raffleData = raffleSnap.data()!;
+      let finalNumbers: number[] = [];
       let totalAmount = 0;
-      let finalNumbers: number[] = Array.isArray(requestedNumbers) ? requestedNumbers.map(Number) : [];
       let quantityNeeded = 0;
       let bonusNumbers = 0;
+      let raffleName = "Sorteio";
 
-      const raffleType = raffleData.type || 'manual';
+      try {
+        await db.runTransaction(async (transaction: any) => {
+          const raffleSnap = await transaction.get(raffleRef);
+          if (!raffleSnap.exists) {
+            throw { status: 404, message: "Rifa não encontrada." };
+          }
 
-      // Determine the quantity and final numbers list
-      if (finalNumbers.length > 0) {
-        quantityNeeded = finalNumbers.length;
-        if (pkgInfo) {
-          let pkg;
-          if (typeof pkgInfo === 'string') {
-            pkg = (raffleData.packages || []).find((p: any) => p.id === pkgInfo);
-          } else if (typeof pkgInfo === 'object') {
-            pkg = { quantity: pkgInfo.quantidade || pkgInfo.quantity, price: pkgInfo.preco || pkgInfo.price };
-          }
-          if (pkg) {
-            totalAmount = pkg.price;
-          } else {
-            totalAmount = quantityNeeded * (raffleData.price || 0);
-          }
-        } else {
-          totalAmount = quantityNeeded * (raffleData.price || 0);
-        }
-      } else {
-        // Fallback: Generate numbers in memory using raffle's occupied_numbers
-        if (pkgInfo) {
-          let pkg;
-          if (typeof pkgInfo === 'string') {
-            pkg = (raffleData.packages || []).find((p: any) => p.id === pkgInfo);
-          } else if (typeof pkgInfo === 'object') {
-            pkg = { quantity: pkgInfo.quantidade || pkgInfo.quantity, price: pkgInfo.preco || pkgInfo.price };
-          }
-          if (!pkg) return res.status(400).json({ success: false, message: "Pacote não encontrado." });
+          const raffleData = raffleSnap.data()!;
+          raffleName = raffleData.name || "Sorteio";
+          const requestedList: number[] = Array.isArray(requestedNumbers) ? requestedNumbers.map(Number) : [];
           
-          quantityNeeded = pkg.quantity;
-          totalAmount = pkg.price;
-        } else {
-          return res.status(400).json({ success: false, message: "Selecione ao menos um número ou pacote." });
-        }
+          let calculatedAmount = 0;
+          let qty = 0;
+          let bonus = 0;
 
-        const totalNums = raffleData.total_numbers || 100;
-        const occupiedList = Array.isArray(raffleData.occupied_numbers) ? raffleData.occupied_numbers.map(Number) : [];
-        const occupiedSet = new Set(occupiedList);
-        const availablePool: number[] = [];
-        for (let i = 0; i < totalNums; i++) {
-          if (!occupiedSet.has(i)) availablePool.push(i);
-        }
-
-        if (availablePool.length < quantityNeeded) {
-          return res.status(400).json({ success: false, message: "Não há números disponíveis suficientes na rifa." });
-        }
-
-        const shuffled = availablePool.sort(() => 0.5 - Math.random());
-        finalNumbers = shuffled.slice(0, quantityNeeded);
-      }
-
-      // Check promotions
-      if (raffleData.promotion?.active) {
-        const promo = raffleData.promotion;
-        if (quantityNeeded >= (promo.min_purchase_quantity || 0)) {
-          if (promo.type === 'discount') {
-            totalAmount = totalAmount * (1 - (promo.value / 100));
-          } else if (promo.type === 'bonus') {
-            bonusNumbers = promo.value;
+          if (requestedList.length > 0) {
+            qty = requestedList.length;
+            if (pkgInfo) {
+              let pkg;
+              if (typeof pkgInfo === 'string') {
+                pkg = (raffleData.packages || []).find((p: any) => p.id === pkgInfo);
+              } else if (typeof pkgInfo === 'object') {
+                pkg = { quantity: pkgInfo.quantidade || pkgInfo.quantity, price: pkgInfo.preco || pkgInfo.price };
+              }
+              calculatedAmount = pkg ? pkg.price : qty * (raffleData.price || 0);
+            } else {
+              calculatedAmount = qty * (raffleData.price || 0);
+            }
+          } else {
+            if (pkgInfo) {
+              let pkg;
+              if (typeof pkgInfo === 'string') {
+                pkg = (raffleData.packages || []).find((p: any) => p.id === pkgInfo);
+              } else if (typeof pkgInfo === 'object') {
+                pkg = { quantity: pkgInfo.quantidade || pkgInfo.quantity, price: pkgInfo.preco || pkgInfo.price };
+              }
+              if (!pkg) throw { status: 400, message: "Pacote não encontrado." };
+              qty = pkg.quantity;
+              calculatedAmount = pkg.price;
+            } else {
+              throw { status: 400, message: "Selecione ao menos um número ou pacote." };
+            }
           }
+
+          if (raffleData.promotion?.active) {
+            const promo = raffleData.promotion;
+            if (qty >= (promo.min_purchase_quantity || 0)) {
+              if (promo.type === 'discount') {
+                calculatedAmount = calculatedAmount * (1 - (promo.value / 100));
+              } else if (promo.type === 'bonus') {
+                bonus = promo.value;
+              }
+            }
+          }
+
+          const nowMs = Date.now();
+          const paidNumbers: number[] = Array.isArray(raffleData.paid_numbers)
+            ? raffleData.paid_numbers.map(Number)
+            : [];
+          const currentReservations: any[] = Array.isArray(raffleData.reserved_numbers)
+            ? raffleData.reserved_numbers
+            : [];
+          const validReservations = currentReservations.filter((r: any) => Number(r.expires_at) > nowMs);
+          const reservedNumbers: number[] = validReservations.flatMap((r: any) =>
+            Array.isArray(r.numbers) ? r.numbers.map(Number) : []
+          );
+
+          const paidSet = new Set(paidNumbers);
+          const reservedSet = new Set(reservedNumbers);
+          const occupiedSet = new Set([...paidNumbers, ...reservedNumbers]);
+
+          let assignedNumbers: number[] = [];
+
+          if (requestedList.length > 0) {
+            const unavailablePaid = requestedList.filter(n => paidSet.has(n));
+            const unavailableReserved = requestedList.filter(n => reservedSet.has(n));
+
+            if (unavailablePaid.length > 0) {
+              throw {
+                status: 400,
+                message: `Infelizmente, os seguintes números já foram pagos por outro cliente: ${unavailablePaid.join(", ")}. Por favor, altere sua seleção.`
+              };
+            }
+
+            if (unavailableReserved.length > 0) {
+              throw {
+                status: 400,
+                message: `Infelizmente, os seguintes números estão temporariamente reservados em processo de pagamento: ${unavailableReserved.join(", ")}. Por favor, escolha outros números.`
+              };
+            }
+
+            assignedNumbers = [...requestedList];
+          } else {
+            const totalNums = raffleData.total_numbers || 100;
+            const availablePool: number[] = [];
+            for (let i = 0; i < totalNums; i++) {
+              if (!occupiedSet.has(i)) availablePool.push(i);
+            }
+
+            if (availablePool.length < qty) {
+              throw { status: 400, message: "Não há números disponíveis suficientes na rifa." };
+            }
+
+            const shuffled = availablePool.sort(() => 0.5 - Math.random());
+            assignedNumbers = shuffled.slice(0, qty);
+          }
+
+          finalNumbers = assignedNumbers;
+          totalAmount = calculatedAmount <= 0 ? 0.01 : calculatedAmount;
+          quantityNeeded = qty;
+          bonusNumbers = bonus;
+
+          const newReservation = {
+            id: identifier,
+            numbers: finalNumbers,
+            expires_at: expiresAtTimestamp,
+            buyer_name: buyerNameClean,
+            phone: buyerPhoneClean
+          };
+
+          const updatedReservations = [...validReservations, newReservation];
+
+          transaction.update(raffleRef, {
+            reserved_numbers: updatedReservations,
+            updated_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+
+          const compraRef = db.collection("compras").doc(identifier);
+          transaction.set(compraRef, {
+            nome: buyerNameClean,
+            telefone: buyerPhoneClean,
+            cpf: normalizeCPF(buyer.cpf),
+            identifier: identifier,
+            external_id: identifier,
+            status: "pending_payment",
+            numero: finalNumbers,
+            quantity: quantityNeeded + bonusNumbers,
+            rifaId: raffleId,
+            valor: totalAmount,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            expires_at: expiresAtDate,
+            expires_at_timestamp: expiresAtTimestamp
+          });
+        });
+      } catch (txErr: any) {
+        if (txErr.status && txErr.message) {
+          return res.status(txErr.status).json({ success: false, message: txErr.message });
         }
+        throw txErr;
       }
 
-      // Validate numbers against paid_numbers and active reserved_numbers in memory (0 extra reads)
-      const nowMs = Date.now();
-      const paidNumbers: number[] = Array.isArray(raffleData.paid_numbers) 
-        ? raffleData.paid_numbers.map(Number) 
-        : [];
-      const validReservations = Array.isArray(raffleData.reserved_numbers)
-        ? raffleData.reserved_numbers.filter((r: any) => Number(r.expires_at) > nowMs)
-        : [];
-      const reservedNumbers: number[] = validReservations.flatMap((r: any) => 
-        Array.isArray(r.numbers) ? r.numbers.map(Number) : []
-      );
-
-      const paidSet = new Set(paidNumbers);
-      const reservedSet = new Set(reservedNumbers);
-
-      const unavailablePaid = finalNumbers.filter(n => paidSet.has(n));
-      const unavailableReserved = finalNumbers.filter(n => reservedSet.has(n));
-
-      if (unavailablePaid.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Infelizmente, os seguintes números já foram pagos por outro cliente: ${unavailablePaid.join(", ")}. Por favor, altere sua seleção.`
-        });
+      // 2. Chamada externa à SyncPayments fora da transação
+      let accessToken;
+      try {
+        accessToken = await generateToken();
+      } catch (authErr: any) {
+        await rollbackReservationServer(db, raffleRef, identifier);
+        return res.status(401).json({ success: false, message: "Erro ao autenticar na SyncPayments", details: authErr.message });
       }
-
-      if (unavailableReserved.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Infelizmente, os seguintes números estão temporariamente reservados em processo de pagamento: ${unavailableReserved.join(", ")}. Por favor, escolha outros números.`
-        });
-      }
-
-      if (totalAmount <= 0) totalAmount = 0.01; // Minimum PIX
-
-      const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      const accessToken = await generateToken();
       
       const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
       const host = req.headers["x-forwarded-host"] || req.headers.host;
@@ -488,7 +568,7 @@ async function startServer() {
       
       const payload = {
         amount: Number(totalAmount.toFixed(2)),
-        description: `Rifa: ${raffleData.name}`,
+        description: `Rifa: ${raffleName}`,
         webhook_url: `${appUrl}/api/webhook-syncpay`,
         external_id: String(identifier),
         client: {
@@ -502,9 +582,21 @@ async function startServer() {
       console.log(`[API PIX server.ts] Criando cobrança para ${identifier}. Valor: ${totalAmount}`);
       console.log(`[API PIX server.ts] Webhook URL configurada: ${payload.webhook_url}`);
 
-      const syncPayResult = await createCashIn(accessToken, payload);
+      let syncPayResult;
+      try {
+        syncPayResult = await createCashIn(accessToken, payload);
+      } catch (apiErr: any) {
+        await rollbackReservationServer(db, raffleRef, identifier);
+        return res.status(500).json({ success: false, message: "Erro ao gerar cobrança PIX", details: apiErr.message });
+      }
+
       const { pix_code } = syncPayResult;
       const gatewayId = String(syncPayResult.identifier || "");
+
+      if (!pix_code) {
+        await rollbackReservationServer(db, raffleRef, identifier);
+        return res.status(500).json({ success: false, message: "Código PIX não retornado pela API" });
+      }
       
       // Determina a imagem do QR Code
       let qrCodeImage = "";
@@ -512,65 +604,31 @@ async function startServer() {
         if (syncPayResult.qr_code.startsWith("data:image/") || syncPayResult.qr_code.startsWith("http://") || syncPayResult.qr_code.startsWith("https://")) {
           qrCodeImage = syncPayResult.qr_code;
         } else if (syncPayResult.qr_code.length > 100 && !syncPayResult.qr_code.startsWith("000201")) {
-          // Base64 sem prefixo
           qrCodeImage = `data:image/png;base64,${syncPayResult.qr_code}`;
         }
       }
       
-      // Se não veio imagem pronta da SyncPay, gera dinamicamente via biblioteca QRCode
       if (!qrCodeImage && pix_code) {
-        qrCodeImage = await QRCode.toDataURL(pix_code, {
-          width: 320,
-          margin: 2,
-          color: {
-            dark: '#000000',
-            light: '#ffffff'
-          }
-        });
+        try {
+          qrCodeImage = await QRCode.toDataURL(pix_code, {
+            width: 320,
+            margin: 2,
+            color: {
+              dark: '#000000',
+              light: '#ffffff'
+            }
+          });
+        } catch (qrErr: any) {
+          console.error("Erro ao gerar QR Code base64:", qrErr.message);
+        }
       }
 
-      // Save purchase and reserve numbers atomically using a batch
-      const batch = db.batch();
-      const expiresAtTimestamp = Date.now() + 15 * 60 * 1000; // 15 minutes reservation
-      const expiresAtDate = new Date(expiresAtTimestamp);
-
-      const newReservation = {
-        id: identifier,
-        numbers: finalNumbers,
-        expires_at: expiresAtTimestamp,
-        buyer_name: buyerNameClean,
-        phone: buyerPhoneClean
-      };
-
-      const updatedReservations = [...validReservations, newReservation];
-
-      // 1. Atualiza apenas as reservas temporárias no documento da rifa (NÃO adiciona em paid_numbers)
-      batch.update(raffleRef, {
-        reserved_numbers: updatedReservations,
+      // Atualiza com dados do PIX
+      await db.collection("compras").doc(identifier).update({
+        pix_code: pix_code,
+        gateway_id: gatewayId,
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
-
-      // 2. Salva a compra com status rigorosamente "pending_payment"
-      const compraRef = db.collection("compras").doc(identifier);
-      batch.set(compraRef, {
-        nome: buyerNameClean,
-        telefone: buyerPhoneClean,
-        cpf: normalizeCPF(buyer.cpf),
-        pix_code: pix_code,
-        identifier: identifier,
-        external_id: identifier,
-        gateway_id: gatewayId,
-        status: "pending_payment",
-        numero: finalNumbers,
-        quantity: quantityNeeded + bonusNumbers,
-        rifaId: raffleId,
-        valor: totalAmount,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expires_at: expiresAtDate,
-        expires_at_timestamp: expiresAtTimestamp
-      });
-
-      await batch.commit();
 
       res.json({
         success: true,

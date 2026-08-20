@@ -65,6 +65,30 @@ const cleanupExpiredReservations = async (db: any, raffleId: string) => {
   }
 };
 
+const rollbackReservation = async (db: any, raffleRef: any, identifier: string) => {
+  try {
+    await db.runTransaction(async (rollbackTx: any) => {
+      const rSnap = await rollbackTx.get(raffleRef);
+      if (rSnap.exists) {
+        const rData = rSnap.data()!;
+        const currentReservations = Array.isArray(rData.reserved_numbers) ? rData.reserved_numbers : [];
+        const remainingReservations = currentReservations.filter((r: any) => r.id !== identifier);
+        rollbackTx.update(raffleRef, {
+          reserved_numbers: remainingReservations,
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      rollbackTx.update(db.collection("compras").doc(identifier), {
+        status: "payment_creation_failed",
+        cancelled_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    console.log(`[ROLLBACK] Reserva ${identifier} desfeita e liberada após falha na criação do PIX.`);
+  } catch (rollbackErr: any) {
+    console.error(`[ROLLBACK Erro] Falha ao desfazer reserva ${identifier}:`, rollbackErr.message);
+  }
+};
+
 const generateUniqueAvailableNumbersOnServer = async (db: any, raffleId: string, quantity: number, totalNumbers: number) => {
   const numbersRef = db.collection("raffles").doc(raffleId).collection("numbers");
   
@@ -343,117 +367,169 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 1. Fetch Raffle Data (Single Read)
+    // 1. ATOMIC PRE-RESERVATION VIA db.runTransaction (BEFORE external SyncPayments API call)
     const raffleRef = db.collection("raffles").doc(raffleId);
-    const raffleSnap = await raffleRef.get();
-    
-    if (!raffleSnap.exists) {
-      return res.status(404).json({ success: false, message: "Rifa não encontrada." });
-    }
+    const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const expiresAtTimestamp = Date.now() + 15 * 60 * 1000; // 15 minutes
+    const expiresAtDate = new Date(expiresAtTimestamp);
 
-    const raffleData = raffleSnap.data()!;
+    let finalNumbers: number[] = [];
     let totalAmount = 0;
-    let finalNumbers: number[] = Array.isArray(requestedNumbers) ? requestedNumbers.map(Number) : [];
     let quantityNeeded = 0;
     let bonusNumbers = 0;
+    let raffleName = "Sorteio";
 
-    const raffleType = raffleData.type || 'manual';
-
-    // Determine the quantity and final numbers list
-    if (finalNumbers.length > 0) {
-      quantityNeeded = finalNumbers.length;
-      if (packageId) {
-        const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
-        if (pkg) {
-          totalAmount = pkg.price;
-        } else {
-          totalAmount = quantityNeeded * (raffleData.price || 0);
+    try {
+      await db.runTransaction(async (transaction) => {
+        const raffleSnap = await transaction.get(raffleRef);
+        if (!raffleSnap.exists) {
+          throw { status: 404, message: "Rifa não encontrada." };
         }
-      } else {
-        totalAmount = quantityNeeded * (raffleData.price || 0);
-      }
-    } else {
-      // Fallback: Generate numbers on server if not provided
-      if (packageId) {
-        const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
-        if (!pkg) return res.status(400).json({ success: false, message: "Pacote não encontrado." });
+
+        const raffleData = raffleSnap.data()!;
+        raffleName = raffleData.name || "Sorteio";
+        const requestedList: number[] = Array.isArray(requestedNumbers) ? requestedNumbers.map(Number) : [];
         
-        quantityNeeded = pkg.quantity;
-        totalAmount = pkg.price;
-      } else {
-        return res.status(400).json({ success: false, message: "Selecione ao menos um número ou pacote." });
-      }
+        let calculatedAmount = 0;
+        let qty = 0;
+        let bonus = 0;
 
-      // Gera números aleatórios disponíveis usando o array da rifa em memória (0 leituras extras!)
-      const totalNums = raffleData.total_numbers || 100;
-      const occupiedList = Array.isArray(raffleData.occupied_numbers) ? raffleData.occupied_numbers.map(Number) : [];
-      const occupiedSet = new Set(occupiedList);
-      const availablePool: number[] = [];
-      for (let i = 0; i < totalNums; i++) {
-        if (!occupiedSet.has(i)) availablePool.push(i);
-      }
-
-      if (availablePool.length < quantityNeeded) {
-        return res.status(400).json({ success: false, message: "Não há números disponíveis suficientes na rifa." });
-      }
-
-      const shuffled = availablePool.sort(() => 0.5 - Math.random());
-      finalNumbers = shuffled.slice(0, quantityNeeded);
-    }
-
-    // Apply promotions if any
-    if (raffleData.promotion?.active) {
-      const promo = raffleData.promotion;
-      if (quantityNeeded >= (promo.min_purchase_quantity || 0)) {
-        if (promo.type === 'discount') {
-          totalAmount = totalAmount * (1 - (promo.value / 100));
-        } else if (promo.type === 'bonus') {
-          bonusNumbers = promo.value;
+        if (requestedList.length > 0) {
+          qty = requestedList.length;
+          if (packageId) {
+            const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
+            calculatedAmount = pkg ? pkg.price : qty * (raffleData.price || 0);
+          } else {
+            calculatedAmount = qty * (raffleData.price || 0);
+          }
+        } else {
+          if (packageId) {
+            const pkg = (raffleData.packages || []).find((p: any) => p.id === packageId);
+            if (!pkg) throw { status: 400, message: "Pacote não encontrado." };
+            qty = pkg.quantity;
+            calculatedAmount = pkg.price;
+          } else {
+            throw { status: 400, message: "Selecione ao menos um número ou pacote." };
+          }
         }
+
+        // Apply promotions
+        if (raffleData.promotion?.active) {
+          const promo = raffleData.promotion;
+          if (qty >= (promo.min_purchase_quantity || 0)) {
+            if (promo.type === 'discount') {
+              calculatedAmount = calculatedAmount * (1 - (promo.value / 100));
+            } else if (promo.type === 'bonus') {
+              bonus = promo.value;
+            }
+          }
+        }
+
+        const nowMs = Date.now();
+        const paidNumbers: number[] = Array.isArray(raffleData.paid_numbers)
+          ? raffleData.paid_numbers.map(Number)
+          : [];
+        const currentReservations: any[] = Array.isArray(raffleData.reserved_numbers)
+          ? raffleData.reserved_numbers
+          : [];
+        const validReservations = currentReservations.filter((r: any) => Number(r.expires_at) > nowMs);
+        const reservedNumbers: number[] = validReservations.flatMap((r: any) =>
+          Array.isArray(r.numbers) ? r.numbers.map(Number) : []
+        );
+
+        const paidSet = new Set(paidNumbers);
+        const reservedSet = new Set(reservedNumbers);
+        const occupiedSet = new Set([...paidNumbers, ...reservedNumbers]);
+
+        let assignedNumbers: number[] = [];
+
+        if (requestedList.length > 0) {
+          const unavailablePaid = requestedList.filter(n => paidSet.has(n));
+          const unavailableReserved = requestedList.filter(n => reservedSet.has(n));
+
+          if (unavailablePaid.length > 0) {
+            throw {
+              status: 400,
+              message: `Infelizmente, os seguintes números já foram pagos por outro cliente: ${unavailablePaid.join(", ")}. Por favor, altere sua seleção.`
+            };
+          }
+
+          if (unavailableReserved.length > 0) {
+            throw {
+              status: 400,
+              message: `Infelizmente, os seguintes números estão temporariamente reservados em processo de pagamento: ${unavailableReserved.join(", ")}. Por favor, escolha outros números.`
+            };
+          }
+
+          assignedNumbers = [...requestedList];
+        } else {
+          const totalNums = raffleData.total_numbers || 100;
+          const availablePool: number[] = [];
+          for (let i = 0; i < totalNums; i++) {
+            if (!occupiedSet.has(i)) availablePool.push(i);
+          }
+
+          if (availablePool.length < qty) {
+            throw { status: 400, message: "Não há números disponíveis suficientes na rifa." };
+          }
+
+          const shuffled = availablePool.sort(() => 0.5 - Math.random());
+          assignedNumbers = shuffled.slice(0, qty);
+        }
+
+        finalNumbers = assignedNumbers;
+        totalAmount = calculatedAmount <= 0 ? 0.01 : calculatedAmount;
+        quantityNeeded = qty;
+        bonusNumbers = bonus;
+
+        const newReservation = {
+          id: identifier,
+          numbers: finalNumbers,
+          expires_at: expiresAtTimestamp,
+          buyer_name: buyerNameClean,
+          phone: normalizePhone(buyer.whatsapp)
+        };
+
+        const updatedReservations = [...validReservations, newReservation];
+
+        // 1. Grava a reserva atômica na rifa
+        transaction.update(raffleRef, {
+          reserved_numbers: updatedReservations,
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 2. Grava a compra inicial com status "pending_payment"
+        const compraRef = db.collection("compras").doc(identifier);
+        transaction.set(compraRef, {
+          nome: buyerNameClean,
+          telefone: normalizePhone(buyer.whatsapp),
+          cpf: normalizeCPF(buyer.cpf),
+          identifier: identifier,
+          external_id: identifier,
+          status: "pending_payment",
+          numero: finalNumbers,
+          quantity: quantityNeeded + bonusNumbers,
+          rifaId: raffleId,
+          valor: totalAmount,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          expires_at: expiresAtDate,
+          expires_at_timestamp: expiresAtTimestamp
+        });
+      });
+    } catch (txError: any) {
+      if (txError.status && txError.message) {
+        return res.status(txError.status).json({ success: false, message: txError.message });
       }
+      throw txError;
     }
 
-    // Validate numbers against paid_numbers and active reserved_numbers in memory (0 extra reads)
-    const nowMs = Date.now();
-    const paidNumbers: number[] = Array.isArray(raffleData.paid_numbers) 
-      ? raffleData.paid_numbers.map(Number) 
-      : [];
-    const validReservations = Array.isArray(raffleData.reserved_numbers)
-      ? raffleData.reserved_numbers.filter((r: any) => Number(r.expires_at) > nowMs)
-      : [];
-    const reservedNumbers: number[] = validReservations.flatMap((r: any) => 
-      Array.isArray(r.numbers) ? r.numbers.map(Number) : []
-    );
-
-    const paidSet = new Set(paidNumbers);
-    const reservedSet = new Set(reservedNumbers);
-
-    const unavailablePaid = finalNumbers.filter(n => paidSet.has(n));
-    const unavailableReserved = finalNumbers.filter(n => reservedSet.has(n));
-
-    if (unavailablePaid.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Infelizmente, os seguintes números já foram pagos por outro cliente: ${unavailablePaid.join(", ")}. Por favor, altere sua seleção.`
-      });
-    }
-
-    if (unavailableReserved.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Infelizmente, os seguintes números estão temporariamente reservados em processo de pagamento: ${unavailableReserved.join(", ")}. Por favor, escolha outros números.`
-      });
-    }
-
-    if (totalAmount <= 0) {
-      totalAmount = 0.01;
-    }
-
-    // 3. Get Auth Token from SyncPayments
+    // 2. Get Auth Token from SyncPayments (FORA da transação)
     let accessToken;
     try {
       accessToken = await generateToken();
     } catch (authError: any) {
+      // Rollback da reserva se a autenticação falhar
+      await rollbackReservation(db, raffleRef, identifier);
       return res.status(401).json({ 
         success: false,
         code: "API_PAGAMENTO_ERRO",
@@ -462,7 +538,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 4. Create Cash-In using the token
+    // 3. Create Cash-In using the token
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers["x-forwarded-host"] || req.headers.host;
     const requestBaseUrl = host ? `${proto}://${host}` : undefined;
@@ -471,6 +547,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : requestBaseUrl;
 
     if (!rawAppUrl) {
+      await rollbackReservation(db, raffleRef, identifier);
       return res.status(500).json({
         success: false,
         code: "APP_URL_NAO_CONFIGURADA",
@@ -478,11 +555,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
     const appUrl = rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl;
-    const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     
     const payload = {
       amount: Number(totalAmount.toFixed(2)),
-      description: `Pagamento Rifa: ${raffleData.name || "Sorteio"}`,
+      description: `Pagamento Rifa: ${raffleName}`,
       webhook_url: `${appUrl}/api/webhook-syncpay`,
       external_id: String(identifier),
       client: {
@@ -501,6 +577,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       syncPayResult = await createCashIn(accessToken, payload);
     } catch (apiError: any) {
+      await rollbackReservation(db, raffleRef, identifier);
       return res.status(500).json({
         success: false,
         code: "PIX_GERACAO_ERRO",
@@ -513,6 +590,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const gatewayId = String(syncPayResult.identifier || syncPayResult.id || "");
 
     if (!pix_code) {
+      await rollbackReservation(db, raffleRef, identifier);
       return res.status(500).json({
         success: false,
         code: "PIX_GERACAO_ERRO",
@@ -546,48 +624,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Save purchase with pending_payment status and reserve numbers atomically
-    const batch = db.batch();
-    const expiresAtTimestamp = Date.now() + 15 * 60 * 1000; // 15 minutes reservation
-    const expiresAtDate = new Date(expiresAtTimestamp);
-
-    const newReservation = {
-      id: identifier,
-      numbers: finalNumbers,
-      expires_at: expiresAtTimestamp,
-      buyer_name: buyerNameClean,
-      phone: normalizePhone(buyer.whatsapp)
-    };
-
-    const updatedReservations = [...validReservations, newReservation];
-
-    // 1. Atualiza apenas as reservas temporárias no documento da rifa (NÃO adiciona em paid_numbers nem incrementa sold_count)
-    batch.update(raffleRef, {
-      reserved_numbers: updatedReservations,
+    // Atualiza a compra com as informações retornadas do PIX
+    await db.collection("compras").doc(identifier).update({
+      pix_code: pix_code,
+      gateway_id: gatewayId,
       updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
-
-    // 2. Salva a compra com status rigorosamente "pending_payment"
-    const compraRef = db.collection("compras").doc(identifier);
-    batch.set(compraRef, {
-      nome: buyerNameClean,
-      telefone: normalizePhone(buyer.whatsapp),
-      cpf: payload.client.cpf,
-      pix_code: pix_code,
-      identifier: identifier,
-      external_id: identifier,
-      gateway_id: gatewayId,
-      status: "pending_payment",
-      numero: finalNumbers,
-      quantity: quantityNeeded + bonusNumbers,
-      rifaId: raffleId,
-      valor: totalAmount,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      expires_at: expiresAtDate,
-      expires_at_timestamp: expiresAtTimestamp
-    });
-
-    await batch.commit();
 
     return res.json({ 
       success: true, 
