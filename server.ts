@@ -153,8 +153,13 @@ async function createCashIn(token: string, payload: any) {
 
     const data = result.data || result;
     
+    // Extrai possíveis campos de QR Code retornados pela SyncPay
+    const rawQr = data.qr_code || data.qrcode || data.qrCode || data.paymentCodeBase64 || data.pix_base64 || data.qr_code_base64 || data.pix_url || "";
+    const pixCode = data.pix_code || data.pix_qrcode || data.pixCode || data.emv || (typeof data.qrcode === 'string' && data.qrcode.startsWith("000201") ? data.qrcode : "") || "";
+
     return {
-      pix_code: data.pix_code || data.pix_qrcode || data.qrcode || "",
+      pix_code: pixCode || (typeof rawQr === 'string' && rawQr.startsWith("000201") ? rawQr : ""),
+      qr_code: rawQr,
       identifier: data.identifier || data.id || ""
     };
   } catch (error: any) {
@@ -500,7 +505,29 @@ async function startServer() {
       const syncPayResult = await createCashIn(accessToken, payload);
       const { pix_code } = syncPayResult;
       const gatewayId = String(syncPayResult.identifier || "");
-      const qrCodeBase64 = await QRCode.toDataURL(pix_code);
+      
+      // Determina a imagem do QR Code
+      let qrCodeImage = "";
+      if (syncPayResult.qr_code && typeof syncPayResult.qr_code === 'string') {
+        if (syncPayResult.qr_code.startsWith("data:image/") || syncPayResult.qr_code.startsWith("http://") || syncPayResult.qr_code.startsWith("https://")) {
+          qrCodeImage = syncPayResult.qr_code;
+        } else if (syncPayResult.qr_code.length > 100 && !syncPayResult.qr_code.startsWith("000201")) {
+          // Base64 sem prefixo
+          qrCodeImage = `data:image/png;base64,${syncPayResult.qr_code}`;
+        }
+      }
+      
+      // Se não veio imagem pronta da SyncPay, gera dinamicamente via biblioteca QRCode
+      if (!qrCodeImage && pix_code) {
+        qrCodeImage = await QRCode.toDataURL(pix_code, {
+          width: 320,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#ffffff'
+          }
+        });
+      }
 
       // Save purchase and reserve numbers atomically using a batch
       const batch = db.batch();
@@ -546,7 +573,7 @@ async function startServer() {
       res.json({
         success: true,
         pix_code,
-        qr_code: qrCodeBase64,
+        qr_code: qrCodeImage,
         identifier,
         numbers: finalNumbers,
         valor: totalAmount

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import QRCode from 'qrcode';
 import { 
   LayoutDashboard, 
   Ticket, 
@@ -761,9 +762,35 @@ const RaffleDetails = () => {
 
       if (res.ok) {
         setPurchaseId(data.identifier);
+
+        let resolvedQr = data.qr_code;
+        const resolvedPixCode = data.pix_code || "";
+
+        // Se o QR Code retornado for uma string base64 pura sem prefixo data:image/
+        if (resolvedQr && typeof resolvedQr === 'string') {
+          if (!resolvedQr.startsWith('data:image/') && !resolvedQr.startsWith('http://') && !resolvedQr.startsWith('https://')) {
+            if (resolvedQr.length > 100 && !resolvedQr.startsWith('000201')) {
+              resolvedQr = `data:image/png;base64,${resolvedQr}`;
+            }
+          }
+        }
+
+        // Se ainda não tiver QR Code válido em imagem, gera diretamente no frontend via QRCode
+        if ((!resolvedQr || resolvedQr.startsWith('000201')) && resolvedPixCode) {
+          try {
+            resolvedQr = await QRCode.toDataURL(resolvedPixCode, {
+              width: 320,
+              margin: 2,
+              color: { dark: '#000000', light: '#ffffff' }
+            });
+          } catch (qrGenErr: any) {
+            console.error("FRONTEND: Erro ao renderizar QR code via canvas:", qrGenErr.message);
+          }
+        }
+
         setPixData({
-          qrcode: data.qr_code,
-          copyPaste: data.pix_code
+          qrcode: resolvedQr || "",
+          copyPaste: resolvedPixCode
         });
         setStep(3);
       } else {
@@ -1131,7 +1158,34 @@ const RaffleDetails = () => {
               {pixData && (
                 <div className="space-y-6 mb-8">
                   <div className="bg-white p-6 rounded-3xl border-2 border-slate-100 shadow-xl inline-block mx-auto">
-                    <img id="pix-qrcode" src={pixData.qrcode} alt="PIX QR Code" className="w-56 h-56 mx-auto" referrerPolicy="no-referrer" />
+                    {pixData.qrcode ? (
+                      <img 
+                        id="pix-qrcode" 
+                        src={pixData.qrcode} 
+                        alt="PIX QR Code" 
+                        className="w-56 h-56 mx-auto object-contain" 
+                        referrerPolicy="no-referrer"
+                        onError={async (e) => {
+                          // Se a imagem falhar ao carregar (por exemplo, URL externa bloqueada por CORS ou formato inválido), recria via canvas a partir do código copia e cola
+                          if (pixData.copyPaste) {
+                            try {
+                              const fallbackUrl = await QRCode.toDataURL(pixData.copyPaste, {
+                                width: 320,
+                                margin: 2,
+                                color: { dark: '#000000', light: '#ffffff' }
+                              });
+                              (e.target as HTMLImageElement).src = fallbackUrl;
+                            } catch (err) {
+                              console.error("Erro ao gerar fallback QR Code:", err);
+                            }
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="w-56 h-56 flex items-center justify-center bg-slate-50 text-slate-400 rounded-2xl">
+                        <QrCode className="w-16 h-16 animate-pulse text-slate-300" />
+                      </div>
+                    )}
                   </div>
                   
                   <div className="space-y-3">

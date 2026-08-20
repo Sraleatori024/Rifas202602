@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import QRCode from 'qrcode';
 import { getDb, admin } from '../lib/firebase-admin.js';
 
 const normalizePhone = (phone: string | number | undefined | null) => {
@@ -218,9 +219,12 @@ async function createCashIn(token: string, payload: any) {
     }
 
     const data = result.data || result;
+    const rawQr = data.qr_code || data.qrcode || data.qrCode || data.paymentCodeBase64 || data.pix_base64 || data.qr_code_base64 || data.pix_url || "";
+    const pixCode = data.pix_code || data.pix_qrcode || data.pixCode || data.emv || (typeof data.qrcode === 'string' && data.qrcode.startsWith("000201") ? data.qrcode : "") || "";
+
     return {
-      pix_code: data.pix_code || data.pix_qrcode || data.qrcode || "",
-      paymentCodeBase64: data.paymentCodeBase64 || data.pix_base64 || "",
+      pix_code: pixCode || (typeof rawQr === 'string' && rawQr.startsWith("000201") ? rawQr : ""),
+      qr_code: rawQr,
       identifier: data.identifier || data.id || ""
     };
   } catch (error: any) {
@@ -516,6 +520,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // Determina a imagem do QR Code
+    let qrCodeImage = "";
+    if (syncPayResult.qr_code && typeof syncPayResult.qr_code === 'string') {
+      if (syncPayResult.qr_code.startsWith("data:image/") || syncPayResult.qr_code.startsWith("http://") || syncPayResult.qr_code.startsWith("https://")) {
+        qrCodeImage = syncPayResult.qr_code;
+      } else if (syncPayResult.qr_code.length > 100 && !syncPayResult.qr_code.startsWith("000201")) {
+        qrCodeImage = `data:image/png;base64,${syncPayResult.qr_code}`;
+      }
+    }
+
+    // Se não veio imagem pronta da SyncPay, gera dinamicamente via biblioteca QRCode
+    if (!qrCodeImage && pix_code) {
+      try {
+        qrCodeImage = await QRCode.toDataURL(pix_code, {
+          width: 320,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#ffffff'
+          }
+        });
+      } catch (qrErr: any) {
+        console.error("Erro ao gerar QR Code base64:", qrErr.message);
+      }
+    }
+
     // Save purchase with pending_payment status and reserve numbers atomically
     const batch = db.batch();
     const expiresAtTimestamp = Date.now() + 10 * 60 * 1000; // 10 minutes reservation
@@ -560,6 +590,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ 
       success: true, 
       pix_code: pix_code,
+      qr_code: qrCodeImage,
       identifier: identifier,
       numbers: finalNumbers,
       valor: totalAmount,
