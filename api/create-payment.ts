@@ -390,7 +390,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 4. Create Cash-In using the token
-    const rawAppUrl = process.env.APP_URL;
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    const requestBaseUrl = host ? `${proto}://${host}` : undefined;
+    const rawAppUrl = (process.env.APP_URL && !process.env.APP_URL.includes("MY_APP_URL")) 
+      ? process.env.APP_URL 
+      : requestBaseUrl;
+
     if (!rawAppUrl) {
       return res.status(500).json({
         success: false,
@@ -415,6 +421,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     console.log(`[API PIX] Criando cobrança para ${identifier}. Valor: ${totalAmount}`);
+    console.log(`[API PIX] Webhook URL configurada: ${payload.webhook_url}`);
     console.log(`[API PIX] Payload external_id: ${payload.external_id}`);
 
     let syncPayResult;
@@ -430,6 +437,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { pix_code } = syncPayResult;
+    const gatewayId = String(syncPayResult.identifier || syncPayResult.id || "");
 
     if (!pix_code) {
       return res.status(500).json({
@@ -467,6 +475,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cpf: payload.client.cpf,
       pix_code: pix_code,
       identifier: identifier,
+      external_id: identifier,
+      gateway_id: gatewayId,
       status: "pending_payment",
       numero: finalNumbers,
       quantity: quantityNeeded + bonusNumbers,

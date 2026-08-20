@@ -542,14 +542,14 @@ const RaffleDetails = () => {
     };
   }, [raffleId]);
 
-  // Listener em tempo real para o status do pagamento
+  // Listener em tempo real e polling ativo para o status do pagamento
   useEffect(() => {
     if (!purchaseId) return;
 
     console.log(`FRONTEND: Iniciando monitoramento em tempo real para a compra: ${purchaseId}`);
     const purchaseRef = doc(db, "compras", purchaseId);
-    
-    const unsub = onSnapshot(purchaseRef, (docSnap) => {
+
+    const handleData = (docSnap: any) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         console.log("FRONTEND: Atualização de status detectada:", data.status);
@@ -570,16 +570,29 @@ const RaffleDetails = () => {
           // Muda para a tela de sucesso
           setStep(4);
         }
-      } else {
-        console.warn("Aguardando criação do documento da compra...");
       }
+    };
+    
+    const unsub = onSnapshot(purchaseRef, (docSnap) => {
+      handleData(docSnap);
     }, (error) => {
       console.error("Erro ao escutar status da compra:", error.message || String(error));
     });
 
+    // Polling ativo a cada 3 segundos como redundância garantida
+    const interval = setInterval(async () => {
+      try {
+        const snap = await getDoc(purchaseRef);
+        handleData(snap);
+      } catch (err) {
+        // Ignora erros transitórios
+      }
+    }, 3000);
+
     return () => {
       console.log("Encerrando monitoramento da compra:", purchaseId);
       unsub();
+      clearInterval(interval);
     };
   }, [purchaseId]);
 
