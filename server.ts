@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
 import QRCode from "qrcode";
 import { getDb, admin } from "./lib/firebase-admin.js";
 
@@ -307,6 +308,8 @@ async function startServer() {
   // Create Payment (SyncPay PIX)
   app.post("/api/create-payment", async (req, res) => {
     const raffleId = req.body.rifaId || req.body.raffleId;
+    const groupId = req.body.groupId || req.body.pixGroupId;
+    const paymentType = req.body.paymentType || (groupId ? "grupo_pix" : "raffle");
     const buyer = req.body.buyer || {
       name: req.body.nome || req.body.name,
       whatsapp: req.body.telefone || req.body.whatsapp || req.body.phone,
@@ -317,16 +320,25 @@ async function startServer() {
     const requestedNumbers = req.body.numero || req.body.numbers || [];
     const pkgInfo = req.body.pacote || req.body.packageId;
     
-    console.log(`[PAYMENT] Nova tentativa de compra: Rifa ${raffleId} | Cliente: ${buyer?.name}`);
+    console.log(`[PAYMENT] Nova tentativa de compra: ${paymentType === 'grupo_pix' ? `Grupo Pix ${groupId}` : `Rifa ${raffleId}`} | Cliente: ${buyer?.name}`);
 
     const buyerNameClean = String(buyer?.name || "").trim();
     const buyerPhoneClean = normalizePhone(buyer?.whatsapp || "");
 
-    if (!raffleId || (requestedNumbers.length === 0 && !pkgInfo) || !buyerPhoneClean || !buyerNameClean || buyerNameClean.length < 3) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Nome Completo e WhatsApp (com DDD) são obrigatórios para realizar a compra." 
-      });
+    if (paymentType === 'grupo_pix') {
+      if (!groupId || !buyerPhoneClean || !buyerNameClean || buyerNameClean.length < 3) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Nome Completo, WhatsApp e Grupo são obrigatórios para participar." 
+        });
+      }
+    } else {
+      if (!raffleId || (requestedNumbers.length === 0 && !pkgInfo) || !buyerPhoneClean || !buyerNameClean || buyerNameClean.length < 3) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Nome Completo e WhatsApp (com DDD) são obrigatórios para realizar a compra." 
+        });
+      }
     }
 
     if (buyerPhoneClean.length < 10 || buyerPhoneClean.length > 11) {
@@ -387,10 +399,170 @@ async function startServer() {
 
     try {
       const db = getDb();
-      const raffleRef = db.collection("raffles").doc(raffleId);
       const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       const expiresAtTimestamp = Date.now() + 15 * 60 * 1000; // 15 minutes reservation
       const expiresAtDate = new Date(expiresAtTimestamp);
+
+      // ==========================================
+      // RAMIFICAÇÃO: GRUPO PIX
+      // ==========================================
+      if (paymentType === 'grupo_pix') {
+        const groupRef = db.collection("pix_groups").doc(String(groupId).trim());
+        let groupTitle = "Grupo Pix";
+        let entryFee = 0;
+
+        try {
+          await db.runTransaction(async (transaction: any) => {
+            const groupSnap = await transaction.get(groupRef);
+            if (!groupSnap.exists) {
+              throw { status: 404, message: "Grupo Pix não encontrado." };
+            }
+            const groupData = groupSnap.data()!;
+            if (groupData.status !== "active") {
+              throw { status: 400, message: "Este Grupo Pix não está ativo para novas participações." };
+            }
+            const maxParticipants = Number(groupData.maxParticipants || 0);
+            const currentParticipants = Number(groupData.currentParticipants || 0);
+            if (maxParticipants > 0 && currentParticipants >= maxParticipants) {
+              throw { status: 400, message: "Este Grupo Pix já atingiu o limite máximo de participantes." };
+            }
+
+            groupTitle = groupData.name || groupData.title || "Grupo Pix";
+            entryFee = Number(groupData.participation_price ?? groupData.entryFee ?? 0);
+
+            if (entryFee <= 0) {
+              throw { status: 400, message: "Valor de participação inválido no grupo." };
+            }
+
+            const compraRef = db.collection("compras").doc(identifier);
+            transaction.set(compraRef, {
+              nome: buyerNameClean,
+              telefone: buyerPhoneClean,
+              cpf: normalizeCPF(buyer.cpf),
+              identifier: identifier,
+              external_id: identifier,
+              status: "pending_payment",
+              type: "grupo_pix",
+              paymentType: "grupo_pix",
+              groupId: String(groupId).trim(),
+              groupTitle: groupTitle,
+              valor: entryFee,
+              numero: [],
+              quantity: 1,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              expires_at: expiresAtDate,
+              expires_at_timestamp: expiresAtTimestamp
+            });
+          });
+        } catch (txErr: any) {
+          if (txErr.status && txErr.message) {
+            return res.status(txErr.status).json({ success: false, message: txErr.message });
+          }
+          throw txErr;
+        }
+
+        // Chamada à SyncPayments para Grupo Pix
+        let accessToken;
+        try {
+          accessToken = await generateToken();
+        } catch (authErr: any) {
+          await db.collection("compras").doc(identifier).update({
+            status: "payment_creation_failed",
+            cancelled_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+          return res.status(401).json({ success: false, message: "Erro ao autenticar na SyncPayments", details: authErr.message });
+        }
+
+        const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+        const host = req.headers["x-forwarded-host"] || req.headers.host;
+        const requestBaseUrl = host ? `${proto}://${host}` : undefined;
+        const rawAppUrl = (process.env.APP_URL && !process.env.APP_URL.includes("MY_APP_URL")) 
+          ? process.env.APP_URL 
+          : requestBaseUrl;
+        const appUrl = rawAppUrl ? (rawAppUrl.endsWith("/") ? rawAppUrl.slice(0, -1) : rawAppUrl) : "";
+
+        const payload = {
+          amount: Number(entryFee.toFixed(2)),
+          description: `Grupo Pix: ${groupTitle}`,
+          webhook_url: `${appUrl}/api/webhook-syncpay`,
+          external_id: String(identifier),
+          client: {
+            name: buyer.name,
+            cpf: normalizeCPF(buyer.cpf),
+            email: buyer.email || "cliente@exemplo.com",
+            phone: normalizePhone(buyer.whatsapp)
+          }
+        };
+
+        console.log(`[API PIX GrupoPix] Criando cobrança para ${identifier}. Grupo: ${groupId}, Valor: ${entryFee}`);
+
+        let syncPayResult;
+        try {
+          syncPayResult = await createCashIn(accessToken, payload);
+        } catch (apiErr: any) {
+          await db.collection("compras").doc(identifier).update({
+            status: "payment_creation_failed",
+            cancelled_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+          return res.status(500).json({ success: false, message: "Erro ao gerar cobrança PIX", details: apiErr.message });
+        }
+
+        const { pix_code } = syncPayResult;
+        const gatewayId = String(syncPayResult.identifier || "");
+
+        if (!pix_code) {
+          await db.collection("compras").doc(identifier).update({
+            status: "payment_creation_failed",
+            cancelled_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+          return res.status(500).json({ success: false, message: "Código PIX não retornado pela API" });
+        }
+
+        let qrCodeImage = "";
+        if (syncPayResult.qr_code && typeof syncPayResult.qr_code === 'string') {
+          if (syncPayResult.qr_code.startsWith("data:image/") || syncPayResult.qr_code.startsWith("http://") || syncPayResult.qr_code.startsWith("https://")) {
+            qrCodeImage = syncPayResult.qr_code;
+          } else if (syncPayResult.qr_code.length > 100 && !syncPayResult.qr_code.startsWith("000201")) {
+            qrCodeImage = `data:image/png;base64,${syncPayResult.qr_code}`;
+          }
+        }
+
+        if (!qrCodeImage && pix_code) {
+          try {
+            qrCodeImage = await QRCode.toDataURL(pix_code, {
+              width: 320,
+              margin: 2,
+              color: { dark: '#000000', light: '#ffffff' }
+            });
+          } catch (qrErr: any) {
+            console.error("Erro ao gerar QR Code base64 Grupo Pix:", qrErr.message);
+          }
+        }
+
+        await db.collection("compras").doc(identifier).update({
+          pix_code: pix_code,
+          gateway_id: gatewayId,
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        return res.json({
+          success: true,
+          pix_code,
+          qr_code: qrCodeImage,
+          identifier,
+          numbers: [],
+          valor: entryFee,
+          type: "grupo_pix",
+          groupId: groupId,
+          expires_at: expiresAtDate.toISOString(),
+          expires_at_timestamp: expiresAtTimestamp
+        });
+      }
+
+      // ==========================================
+      // FLUXO ORIGINAL DAS RIFAS (100% PRESERVADO)
+      // ==========================================
+      const raffleRef = db.collection("raffles").doc(raffleId);
 
       let finalNumbers: number[] = [];
       let totalAmount = 0;
@@ -807,20 +979,22 @@ async function startServer() {
         }
 
         const batch = db.batch();
-        const raffleRef = db.collection("raffles").doc(purchaseData.rifaId);
-        const raffleSnap = await raffleRef.get();
-        if (raffleSnap.exists) {
-          const raffleData = raffleSnap.data()!;
-          const currentReservations = Array.isArray(raffleData.reserved_numbers) ? raffleData.reserved_numbers : [];
-          const remainingReservations = currentReservations.filter((r: any) => 
-            r.id !== purchaseDoc.id && 
-            r.id !== purchaseData?.identifier && 
-            r.id !== purchaseData?.external_id
-          );
-          batch.update(raffleRef, {
-            reserved_numbers: remainingReservations,
-            updated_at: admin.firestore.FieldValue.serverTimestamp()
-          });
+        if (purchaseData.rifaId) {
+          const raffleRef = db.collection("raffles").doc(purchaseData.rifaId);
+          const raffleSnap = await raffleRef.get();
+          if (raffleSnap.exists) {
+            const raffleData = raffleSnap.data()!;
+            const currentReservations = Array.isArray(raffleData.reserved_numbers) ? raffleData.reserved_numbers : [];
+            const remainingReservations = currentReservations.filter((r: any) => 
+              r.id !== purchaseDoc.id && 
+              r.id !== purchaseData?.identifier && 
+              r.id !== purchaseData?.external_id
+            );
+            batch.update(raffleRef, {
+              reserved_numbers: remainingReservations,
+              updated_at: admin.firestore.FieldValue.serverTimestamp()
+            });
+          }
         }
 
         batch.update(purchaseDoc.ref, {
@@ -862,8 +1036,131 @@ async function startServer() {
       });
     }
 
-    const { rifaId, numero, nome, telefone, valor, quantity } = purchaseData;
     const db = getDb();
+
+    // =======================================================
+    // RAMIFICAÇÃO: CONFIRMAÇÃO DE PAGAMENTO PARA GRUPO PIX
+    // =======================================================
+    if (purchaseData.type === "grupo_pix" || purchaseData.paymentType === "grupo_pix" || purchaseData.groupId) {
+      console.log(`[Webhook GrupoPix] Processando confirmação para compra ${paymentId}, Grupo ${purchaseData.groupId}`);
+      const groupId = String(purchaseData.groupId || "").trim();
+      const groupRef = db.collection("pix_groups").doc(groupId);
+
+      try {
+        let participationCode = "";
+        let groupTitle = "";
+        let whatsappGroupUrl = "";
+        let telegramGroupUrl = "";
+
+        await db.runTransaction(async (transaction: any) => {
+          const freshPaymentSnap = await transaction.get(paymentRef);
+          if (!freshPaymentSnap.exists) {
+            throw new Error("Documento de compra não encontrado.");
+          }
+          const freshPaymentData = freshPaymentSnap.data()!;
+          if (freshPaymentData.status === "paid" || freshPaymentData.status === "pago") {
+            console.log(`[Webhook GrupoPix Idempotência] Compra ${paymentId} já marcada como paga.`);
+            return;
+          }
+
+          const groupSnap = await transaction.get(groupRef);
+          if (!groupSnap.exists) {
+            throw new Error(`Grupo Pix ${groupId} não encontrado.`);
+          }
+          const groupData = groupSnap.data()!;
+          groupTitle = groupData.name || groupData.title || "Grupo Pix";
+          whatsappGroupUrl = groupData.access_link || groupData.whatsappGroupUrl || "";
+          telegramGroupUrl = groupData.telegramGroupUrl || (groupData.type === 'telegram' ? groupData.access_link : "") || "";
+
+          // Gera código único criptográfico de 8 caracteres alfanuméricos
+          participationCode = `GPX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+          const participationId = `part_${paymentId}`;
+          const participationRef = db.collection("pix_participations").doc(participationId);
+
+          // 1. Cria a participação vinculada ao pagamento confirmado
+          transaction.set(participationRef, {
+            id: participationId,
+            groupId: groupId,
+            group_id: groupId,
+            group_name: groupTitle,
+            userId: normalizePhone(purchaseData.telefone),
+            userName: purchaseData.nome || "",
+            buyer_name: purchaseData.nome || "",
+            userPhone: normalizePhone(purchaseData.telefone),
+            buyer_phone: normalizePhone(purchaseData.telefone),
+            userCpf: normalizeCPF(purchaseData.cpf || ""),
+            buyer_cpf: normalizeCPF(purchaseData.cpf || ""),
+            purchaseId: paymentId,
+            payment_id: paymentId,
+            paymentId: paymentId,
+            amount: Number(purchaseData.valor || groupData.participation_price || 0),
+            participationCode: participationCode,
+            participation_code: participationCode,
+            paidAt: admin.firestore.FieldValue.serverTimestamp(),
+            confirmed_at: admin.firestore.FieldValue.serverTimestamp(),
+            status: "active",
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            created_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+
+          // 2. Atualiza a compra como paga
+          transaction.update(paymentRef, {
+            status: "paid",
+            paid_at: admin.firestore.FieldValue.serverTimestamp(),
+            webhook_processed_at: admin.firestore.FieldValue.serverTimestamp(),
+            participationId: participationId,
+            participationCode: participationCode
+          });
+
+          // 3. Incrementa a contagem de participantes do grupo
+          transaction.update(groupRef, {
+            currentParticipants: admin.firestore.FieldValue.increment(1),
+            valid_participations_count: admin.firestore.FieldValue.increment(1),
+            total_participations_count: admin.firestore.FieldValue.increment(1),
+            total_revenue: admin.firestore.FieldValue.increment(Number(purchaseData.valor || 0)),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updated_at: admin.firestore.FieldValue.serverTimestamp()
+          });
+        });
+
+        // Grava no perfil do usuário
+        const userPhone = normalizePhone(purchaseData.telefone);
+        if (userPhone) {
+          const userRef = db.collection("users").doc(userPhone);
+          await userRef.set({
+            name: purchaseData.nome || '',
+            whatsapp: userPhone,
+            pixParticipations: admin.firestore.FieldValue.arrayUnion({
+              groupId,
+              groupTitle,
+              purchaseId: paymentId,
+              participationCode,
+              paidAt: new Date().toISOString()
+            })
+          }, { merge: true });
+        }
+
+        console.log(`[Webhook GrupoPix Sucesso] Participação ${participationCode} criada com sucesso para compra ${paymentId}.`);
+        return res.status(200).json({
+          success: true,
+          type: "grupo_pix",
+          message: "Pagamento do Grupo Pix confirmado com sucesso!",
+          purchase_id: paymentId,
+          participationCode: participationCode,
+          whatsappGroupUrl: whatsappGroupUrl,
+          telegramGroupUrl: telegramGroupUrl
+        });
+
+      } catch (pixErr: any) {
+        console.error(`[Webhook GrupoPix Erro] Falha ao processar pagamento ${paymentId}:`, pixErr.message);
+        return res.status(500).json({ error: "Erro ao processar confirmação do Grupo Pix", details: pixErr.message });
+      }
+    }
+
+    // =======================================================
+    // FLUXO ORIGINAL DAS RIFAS (100% PRESERVADO)
+    // =======================================================
+    const { rifaId, numero, nome, telefone, valor, quantity } = purchaseData;
     const raffleRef = db.collection("raffles").doc(rifaId);
     const raffleSnap = await raffleRef.get();
     
@@ -1314,6 +1611,128 @@ async function startServer() {
       });
     }
   });
+
+  // =======================================================
+  // GRUPO PIX: SORTEIO EXCLUSIVAMENTE NO BACKEND
+  // =======================================================
+  app.post("/api/grupo-pix/draw", async (req, res) => {
+    const { groupId } = req.body || {};
+    if (!groupId) {
+      return res.status(400).json({ success: false, message: "ID do grupo é obrigatório." });
+    }
+
+    try {
+      const db = getDb();
+      const groupRef = db.collection("pix_groups").doc(String(groupId).trim());
+
+      let drawResult: any = null;
+
+      await db.runTransaction(async (transaction: any) => {
+        const groupSnap = await transaction.get(groupRef);
+        if (!groupSnap.exists) {
+          throw { status: 404, message: "Grupo Pix não encontrado." };
+        }
+        const groupData = groupSnap.data()!;
+        if (groupData.status === "completed" || groupData.status === "drawn") {
+          throw { status: 400, message: "Este sorteio já foi realizado anteriormente." };
+        }
+
+        // Busca todas as participações ativas do grupo
+        const participationsSnap = await db.collection("pix_participations")
+          .where("groupId", "==", String(groupId).trim())
+          .where("status", "==", "active")
+          .get();
+
+        if (participationsSnap.empty) {
+          throw { status: 400, message: "Nenhuma participação confirmada encontrada para realizar o sorteio." };
+        }
+
+        const participants: any[] = [];
+        participationsSnap.forEach((doc: any) => {
+          participants.push({ docId: doc.id, ...doc.data() });
+        });
+
+        // Sorteio criptograficamente seguro no backend
+        const randomBuffer = crypto.randomBytes(4);
+        const randomIndex = randomBuffer.readUInt32BE(0) % participants.length;
+        const winner = participants[randomIndex];
+
+        // Mascara telefone do vencedor para exibição pública segura (ex: (11) 9****-1234)
+        const rawWinnerPhone = String(winner.buyer_phone || winner.userPhone || "");
+        const maskedPhone = rawWinnerPhone.length >= 8 
+          ? rawWinnerPhone.slice(0, 4) + "****" + rawWinnerPhone.slice(-4)
+          : "****";
+
+        const winnerCode = winner.participation_code || winner.participationCode;
+        const winnerName = winner.buyer_name || winner.userName || "Participante";
+        const groupTitle = groupData.name || groupData.title || "Grupo Pix";
+        const prize = groupData.prize || groupData.prizeValue || "Prêmio PIX";
+
+        const drawId = `draw_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const drawRef = db.collection("pix_draws").doc(drawId);
+
+        drawResult = {
+          id: drawId,
+          groupId: String(groupId).trim(),
+          group_id: String(groupId).trim(),
+          groupTitle: groupTitle,
+          group_name: groupTitle,
+          prize: prize,
+          prizeValue: Number(groupData.prizeValue || 0),
+          winnerParticipationCode: winnerCode,
+          winner_code: winnerCode,
+          winner_participation_id: winner.docId || winner.id,
+          winnerName: winnerName,
+          winner_name: winnerName,
+          winnerPhone: rawWinnerPhone,
+          winner_phone_masked: maskedPhone,
+          drawnAt: admin.firestore.FieldValue.serverTimestamp(),
+          created_at: admin.firestore.FieldValue.serverTimestamp(),
+          drawn_by: "system_backend",
+          status: "completed",
+          totalParticipants: participants.length,
+          valid_participations_count: participants.length,
+          winnerIndex: randomIndex,
+          allParticipationCodes: participants.map((p: any) => p.participation_code || p.participationCode)
+        };
+
+        // Salva o registro imutável do sorteio
+        transaction.set(drawRef, drawResult);
+
+        // Atualiza o status do grupo para concluído/sorteado
+        transaction.update(groupRef, {
+          status: "drawn",
+          winnerParticipationCode: winnerCode,
+          winner_code: winnerCode,
+          winnerName: winnerName,
+          winner_name: winnerName,
+          winnerPhoneMasked: maskedPhone,
+          winner_phone_masked: maskedPhone,
+          drawnAt: admin.firestore.FieldValue.serverTimestamp(),
+          draw_date: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+
+      console.log(`[SORTEIO GRUPO PIX] Sorteio realizado com sucesso para o Grupo ${groupId}. Vencedor: ${drawResult.winnerName} (${drawResult.winnerParticipationCode})`);
+
+      return res.json({
+        success: true,
+        message: "Sorteio realizado com sucesso!",
+        draw: drawResult
+      });
+
+    } catch (drawErr: any) {
+      console.error("[SORTEIO GRUPO PIX ERRO]:", drawErr.message || String(drawErr));
+      const status = drawErr.status || 500;
+      return res.status(status).json({
+        success: false,
+        message: drawErr.message || "Erro ao realizar sorteio do Grupo Pix"
+      });
+    }
+  });
+
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

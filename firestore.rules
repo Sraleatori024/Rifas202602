@@ -55,5 +55,30 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // Pix Groups: Public can read, only admin can write
+    match /pix_groups/{groupId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Pix Participations: Admin can read/write, user can read their own, creation only via server/admin
+    match /pix_participations/{participationId} {
+      allow read: if isAdmin() || (resource != null && (resource.data.buyer_phone == request.auth.uid || resource.data.user_id == request.auth.uid));
+      allow get: if true; // Allows verification screen with ID
+      allow write: if isAdmin();
+    }
+
+    // Pix Draws: Public can read results, only admin/server can write
+    match /pix_draws/{drawId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Pix Compliance config
+    match /pix_compliance/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
   }
 }

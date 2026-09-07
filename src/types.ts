@@ -107,3 +107,68 @@ export interface RaffleNumber {
   buyer_instagram?: string;
   expires_at?: any;
 }
+
+export type PixGroupType = 'whatsapp' | 'telegram';
+export type PixGroupStatus = 'draft' | 'active' | 'paused' | 'closed' | 'drawn';
+export type PixParticipationStatus = 'pending' | 'valid' | 'invalid' | 'cancelled';
+
+export interface PixGroup {
+  id: string;
+  name: string;
+  description: string;
+  image_url?: string;
+  type: PixGroupType;
+  access_link: string;
+  participation_price: number;
+  prize: string;
+  prize_description?: string;
+  closing_date?: string;
+  draw_date?: string;
+  max_participations?: number;
+  allow_multiple_participations?: boolean;
+  status: PixGroupStatus;
+  created_at: string;
+  updated_at?: string;
+  created_by?: string;
+  total_participations_count?: number;
+  valid_participations_count?: number;
+  total_revenue?: number;
+}
+
+export interface PixParticipation {
+  id: string;
+  group_id: string;
+  group_name?: string;
+  user_id?: string;
+  buyer_name: string;
+  buyer_phone: string;
+  buyer_cpf?: string;
+  payment_id: string;
+  amount: number;
+  status: PixParticipationStatus;
+  participation_code: string; // Ex: GP01-A8B9C2
+  created_at: string;
+  confirmed_at?: string;
+  cancelled_at?: string;
+}
+
+export interface PixDraw {
+  id: string;
+  group_id: string;
+  group_name: string;
+  prize: string;
+  winner_participation_id: string;
+  winner_code: string;
+  winner_name: string;
+  winner_phone_masked: string;
+  valid_participations_count: number;
+  created_at: string;
+  drawn_by: string;
+  status: 'completed' | 'cancelled';
+  audit_hash?: string;
+}
+
+export interface PixGlobalCompliance {
+  enabled: boolean;
+  terms_notice?: string;
+}

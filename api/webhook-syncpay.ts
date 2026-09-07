@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import crypto from 'crypto';
 import { getDb, admin } from '../lib/firebase-admin.js';
 
 const normalizePhone = (phone: string | number | undefined | null) => {
@@ -331,6 +332,102 @@ async function processPayment(docSnap: any, res: VercelResponse) {
         return { alreadyPaid: true, purchaseData };
       }
 
+      // =======================================================
+      // RAMIFICAÇÃO: CONFIRMAÇÃO DE PAGAMENTO PARA GRUPO PIX
+      // =======================================================
+      if (purchaseData.type === "grupo_pix" || purchaseData.paymentType === "grupo_pix" || purchaseData.groupId) {
+        console.log(`[API Webhook GrupoPix] Processando confirmação para compra ${paymentId}, Grupo ${purchaseData.groupId}`);
+        const groupId = String(purchaseData.groupId || "").trim();
+        const groupRef = db.collection("pix_groups").doc(groupId);
+
+        const groupSnap = await transaction.get(groupRef);
+        if (!groupSnap.exists) {
+          throw new Error(`Grupo Pix ${groupId} não encontrado.`);
+        }
+        const groupData = groupSnap.data()!;
+        const groupTitle = groupData.name || groupData.title || "Grupo Pix";
+        const whatsappGroupUrl = groupData.access_link || groupData.whatsappGroupUrl || "";
+        const telegramGroupUrl = groupData.telegramGroupUrl || (groupData.type === 'telegram' ? groupData.access_link : "") || "";
+
+        // Gera código único criptográfico
+        const participationCode = `GPX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const participationId = `part_${paymentId}`;
+        const participationRef = db.collection("pix_participations").doc(participationId);
+
+        // 1. Cria a participação vinculada ao pagamento confirmado
+        transaction.set(participationRef, {
+          id: participationId,
+          groupId: groupId,
+          group_id: groupId,
+          group_name: groupTitle,
+          userId: normalizePhone(purchaseData.telefone),
+          userName: purchaseData.nome || "",
+          buyer_name: purchaseData.nome || "",
+          userPhone: normalizePhone(purchaseData.telefone),
+          buyer_phone: normalizePhone(purchaseData.telefone),
+          userCpf: purchaseData.cpf || "",
+          buyer_cpf: purchaseData.cpf || "",
+          purchaseId: paymentId,
+          paymentId: paymentId,
+          payment_id: paymentId,
+          amount: Number(purchaseData.valor || groupData.participation_price || 0),
+          participationCode: participationCode,
+          participation_code: participationCode,
+          paidAt: admin.firestore.FieldValue.serverTimestamp(),
+          confirmed_at: admin.firestore.FieldValue.serverTimestamp(),
+          status: "active",
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          created_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 2. Atualiza a compra como paga
+        transaction.update(paymentRef, {
+          status: "paid",
+          paid_at: admin.firestore.FieldValue.serverTimestamp(),
+          webhook_processed_at: admin.firestore.FieldValue.serverTimestamp(),
+          participationId: participationId,
+          participationCode: participationCode
+        });
+
+        // 3. Incrementa a contagem de participantes do grupo
+        transaction.update(groupRef, {
+          currentParticipants: admin.firestore.FieldValue.increment(1),
+          valid_participations_count: admin.firestore.FieldValue.increment(1),
+          total_participations_count: admin.firestore.FieldValue.increment(1),
+          total_revenue: admin.firestore.FieldValue.increment(Number(purchaseData.valor || 0)),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updated_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Grava no perfil do usuário
+        const userPhone = normalizePhone(purchaseData.telefone);
+        if (userPhone) {
+          const userRef = db.collection("users").doc(userPhone);
+          transaction.set(userRef, {
+            name: purchaseData.nome || '',
+            whatsapp: userPhone,
+            pixParticipations: admin.firestore.FieldValue.arrayUnion({
+              groupId,
+              groupTitle,
+              purchaseId: paymentId,
+              participationCode,
+              paidAt: new Date().toISOString()
+            })
+          }, { merge: true });
+        }
+
+        return {
+          isGrupoPix: true,
+          purchaseId: paymentId,
+          participationCode,
+          whatsappGroupUrl,
+          telegramGroupUrl
+        };
+      }
+
+      // =======================================================
+      // FLUXO ORIGINAL DAS RIFAS (100% PRESERVADO)
+      // =======================================================
       const { rifaId, numero, nome, telefone, valor, quantity } = purchaseData;
       if (!rifaId) {
         throw new Error("rifaId missing in purchase document");
@@ -424,6 +521,18 @@ async function processPayment(docSnap: any, res: VercelResponse) {
         success: true, 
         idempotent: true, 
         message: "Pagamento já confirmado! Boa sorte 🍀" 
+      });
+    }
+
+    if (result.isGrupoPix) {
+      return res.status(200).json({
+        success: true,
+        type: "grupo_pix",
+        message: "Pagamento do Grupo Pix confirmado com sucesso!",
+        purchase_id: result.purchaseId,
+        participationCode: result.participationCode,
+        whatsappGroupUrl: result.whatsappGroupUrl,
+        telegramGroupUrl: result.telegramGroupUrl
       });
     }
 

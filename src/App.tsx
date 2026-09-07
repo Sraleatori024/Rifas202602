@@ -46,6 +46,8 @@ import {
   PerguntasFrequentes, 
   Contato 
 } from './components/LegalPages';
+import { GrupoPixPublic } from './components/GrupoPixPublic';
+import { GrupoPixAdmin } from './components/GrupoPixAdmin';
 import { auth, db } from './firebase';
 import { 
   signInWithEmailAndPassword, 
@@ -437,6 +439,10 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
 
           <div className="hidden md:flex items-center space-x-8">
             <Link to="/" className="text-slate-600 hover:text-primary font-medium transition-colors">Início</Link>
+            <Link to="/grupo-pix" className="text-emerald-600 hover:text-emerald-700 font-bold transition-colors flex items-center gap-1.5">
+              <Users className="w-4 h-4" />
+              <span>Grupo Pix</span>
+            </Link>
             <button 
               onClick={() => setShowConsult(true)}
               className="text-slate-600 hover:text-primary font-medium transition-colors flex items-center gap-2"
@@ -461,6 +467,10 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
           </div>
 
           <div className="md:hidden flex items-center gap-4">
+            <Link to="/grupo-pix" className="text-emerald-600 font-bold text-xs flex items-center gap-1 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+              <Users className="w-3.5 h-3.5" />
+              <span>Grupo Pix</span>
+            </Link>
             <button 
               onClick={() => setShowConsult(true)}
               className="text-slate-600 hover:text-primary"
@@ -485,6 +495,10 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
           >
             <div className="px-4 pt-2 pb-6 space-y-2">
               <Link to="/" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-slate-600 font-medium">Início</Link>
+              <Link to="/grupo-pix" onClick={() => setIsOpen(false)} className="block px-3 py-2 text-emerald-600 font-bold flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                <span>Grupo Pix (WhatsApp / Telegram)</span>
+              </Link>
               <button 
                 onClick={() => { setShowConsult(true); setIsOpen(false); }}
                 className="w-full text-left px-3 py-2 text-slate-600 font-medium"
@@ -574,7 +588,7 @@ const Home = ({ setShowConsult }: { setShowConsult: (show: boolean) => void }) =
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="flex justify-center"
+          className="flex flex-wrap justify-center gap-4"
         >
           <button 
             onClick={() => setShowConsult(true)}
@@ -583,6 +597,13 @@ const Home = ({ setShowConsult }: { setShowConsult: (show: boolean) => void }) =
             <Search className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
             <span>Consultar meus números</span>
           </button>
+          <Link
+            to="/grupo-pix"
+            className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-emerald-600/20 hover:shadow-2xl hover:brightness-105 transition-all flex items-center gap-3 group"
+          >
+            <Users className="w-6 h-6 text-emerald-200 group-hover:scale-110 transition-transform" />
+            <span>Grupos Pix (WhatsApp / Telegram)</span>
+          </Link>
         </motion.div>
       </header>
 
@@ -2174,7 +2195,7 @@ const AdminDashboard = () => {
   });
 
   const [compras, setCompras] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'raffles' | 'customers' | 'debug'>('raffles');
+  const [activeTab, setActiveTab] = useState<'raffles' | 'customers' | 'grupo_pix' | 'debug'>('raffles');
   const [globalStats, setGlobalStats] = useState({
     totalRevenue: 0,
     activeCustomers: 0,
@@ -2590,6 +2611,16 @@ const AdminDashboard = () => {
               Clientes
             </button>
             <button 
+              onClick={() => setActiveTab('grupo_pix')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5",
+                activeTab === 'grupo_pix' ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Grupos Pix
+            </button>
+            <button 
               onClick={() => setActiveTab('debug')}
               className={cn(
                 "px-4 py-2 rounded-lg text-sm font-bold transition-all",
@@ -2784,6 +2815,8 @@ const AdminDashboard = () => {
             </table>
           </div>
         </div>
+      ) : activeTab === 'grupo_pix' ? (
+        <GrupoPixAdmin />
       ) : (
         <DebugPanel />
       )}
@@ -3567,6 +3600,7 @@ export default function App() {
         <main className="flex-grow">
           <Routes>
             <Route path="/" element={<Home setShowConsult={setShowConsult} />} />
+            <Route path="/grupo-pix" element={<GrupoPixPublic />} />
             <Route path="/raffle/:id" element={<RaffleDetails />} />
             <Route path="/setup" element={<Setup />} />
             <Route 
@@ -3613,6 +3647,7 @@ export default function App() {
                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Campanhas</h4>
                 <ul className="space-y-2 text-sm font-semibold">
                   <li><Link to="/" className="hover:text-white transition-colors">Ver Campanhas</Link></li>
+                  <li><Link to="/grupo-pix" className="hover:text-white transition-colors text-emerald-400 font-bold">Grupos Pix (WhatsApp / Telegram)</Link></li>
                   <li><Link to="/regras" className="hover:text-white transition-colors">Regras da Campanha</Link></li>
                   <li><button onClick={() => setShowConsult(true)} className="hover:text-white transition-colors">Meus Números</button></li>
                 </ul>
