@@ -35,6 +35,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PixGroup, PixParticipation, PixDraw } from '../types';
+import { GrupoPixDrawExperience } from './GrupoPixDrawExperience';
 
 export const GrupoPixAdmin: React.FC = () => {
   // Navigation & Sub-Tabs: 'grupos' | 'participantes' | 'pagamentos' | 'arrecadacao' | 'sorteios'
@@ -486,12 +487,13 @@ export const GrupoPixAdmin: React.FC = () => {
               <div className="flex flex-wrap items-center gap-3">
                 {selectedGroup.status !== 'drawn' && (
                   <button
-                    onClick={() => handlePerformBackendDraw(selectedGroup)}
+                    id="btn-iniciar-sorteio-grupo"
+                    onClick={() => setExecutingDrawGroup(selectedGroup)}
                     disabled={groupStats.participacoesValidas === 0}
-                    className="px-5 py-3 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs rounded-xl shadow-md shadow-purple-600/20 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-5 py-3 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
-                    <Trophy className="w-4 h-4" />
-                    Realizar Sorteio Seguro (Backend)
+                    <Trophy className="w-4 h-4 text-slate-950" />
+                    Iniciar Sorteio Oficial
                   </button>
                 )}
 
@@ -1326,68 +1328,27 @@ export const GrupoPixAdmin: React.FC = () => {
         </div>
       )}
 
-      {/* Modal / Feedback do Sorteio Backend */}
+      {/* Experiência Visual Premium e Cinematográfica de Sorteio */}
       {executingDrawGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl border border-slate-100 text-center space-y-6">
-            <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto">
-              <Trophy className="w-8 h-8" />
-            </div>
-
-            <div>
-              <h3 className="text-xl font-black text-slate-900">Sorteio Oficial no Backend</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                {executingDrawGroup.name || (executingDrawGroup as any).title}
-              </p>
-            </div>
-
-            {drawLoading && (
-              <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
-                <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-xs font-bold text-slate-700">Calculando vencedor aleatório criptográfico...</p>
-              </div>
-            )}
-
-            {drawError && (
-              <div className="p-4 bg-red-50 text-red-700 border border-red-200 rounded-xl text-xs font-bold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{drawError}</span>
-              </div>
-            )}
-
-            {drawResult && (
-              <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
-                <div className="p-5 bg-purple-50 border border-purple-200 rounded-2xl space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">
-                    Vencedor Sorteado
-                  </span>
-                  <h4 className="text-xl font-black text-purple-950">{drawResult.winnerName}</h4>
-                  <p className="text-sm font-mono font-black text-purple-800 bg-white/80 py-1 px-3 rounded-lg inline-block border border-purple-200 select-all">
-                    Código: {drawResult.winnerParticipationCode}
-                  </p>
-                  <p className="text-xs text-purple-700">
-                    Telefone: {drawResult.winner_phone_masked || drawResult.winnerPhone}
-                  </p>
-                </div>
-
-                <p className="text-[11px] text-slate-400">
-                  O resultado foi salvo permanentemente e os participantes podem consultar o resultado em tempo real.
-                </p>
-              </div>
-            )}
-
-            <button
-              onClick={() => {
-                setExecutingDrawGroup(null);
-                setDrawResult(null);
-                setDrawError(null);
-              }}
-              className="w-full py-3 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold transition-all"
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
+        <GrupoPixDrawExperience
+          group={executingDrawGroup}
+          validParticipations={participations.filter(
+            p => (p.groupId === executingDrawGroup.id || p.group_id === executingDrawGroup.id) && 
+                 (p.status === 'valid' || p.status === 'active')
+          )}
+          isOpen={!!executingDrawGroup}
+          onClose={() => {
+            setExecutingDrawGroup(null);
+            setDrawResult(null);
+            setDrawError(null);
+          }}
+          onDrawCompleted={(result) => {
+            setDrawResult(result);
+            if (selectedGroup && selectedGroup.id === executingDrawGroup.id) {
+              setSelectedGroup(prev => prev ? { ...prev, status: 'drawn' } : null);
+            }
+          }}
+        />
       )}
     </div>
   );
