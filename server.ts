@@ -308,18 +308,18 @@ async function startServer() {
   // ============================================================================
   async function handleGrupoPixPaymentServer(req: express.Request, res: express.Response, db: any) {
     const groupId = req.body.groupId || req.body.pixGroupId;
-    const buyer = req.body.buyer || {
-      name: req.body.nome || req.body.name,
-      whatsapp: req.body.telefone || req.body.whatsapp || req.body.phone,
-      cpf: req.body.cpf
-    };
+    const buyer = req.body.buyer || {};
+    const rawBuyerName = buyer.name || req.body.nome || req.body.name || "";
+    const rawBuyerPhone = buyer.whatsapp || buyer.phone || buyer.telefone || req.body.telefone || req.body.whatsapp || req.body.phone || "";
+    const rawBuyerCpf = buyer.cpf || req.body.cpf || "";
 
-    const buyerNameClean = String(buyer?.name || "").trim();
-    const buyerPhoneClean = normalizePhone(buyer?.whatsapp || "");
+    const buyerNameClean = String(rawBuyerName).trim();
+    const buyerPhoneClean = normalizePhone(rawBuyerPhone);
 
     console.log(`[PAYMENT GRUPO PIX server.ts] Nova tentativa: Grupo ${groupId} | Cliente: ${buyerNameClean}`);
 
     if (!groupId || !buyerPhoneClean || !buyerNameClean || buyerNameClean.length < 3) {
+      console.warn(`[GRUPO PIX ERROR] Ponto: validação de entrada, Motivo: campos obrigatórios ausentes (groupId: ${!!groupId}, phone: ${!!buyerPhoneClean}, name: ${!!buyerNameClean}), Status: 400`);
       return res.status(400).json({ 
         success: false, 
         message: "Nome Completo, WhatsApp e Grupo são obrigatórios para participar." 
@@ -327,12 +327,25 @@ async function startServer() {
     }
 
     if (buyerPhoneClean.length < 10 || buyerPhoneClean.length > 11) {
+      console.warn(`[GRUPO PIX ERROR] Ponto: validação de telefone, Motivo: comprimento inválido (${buyerPhoneClean.length}), Status: 400`);
       return res.status(400).json({
         success: false,
         code: "TELEFONE_INVALIDO",
         message: "WhatsApp inválido. Por favor, insira o DDD e o número completo, ex: (11) 99999-9999"
       });
     }
+
+    const normalizedCPFVal = normalizeCPF(rawBuyerCpf);
+    if (rawBuyerCpf && normalizedCPFVal.length !== 11) {
+      console.warn(`[GRUPO PIX ERROR] Ponto: validação de CPF, Motivo: CPF com tamanho inválido (${normalizedCPFVal.length}), Status: 400`);
+      return res.status(400).json({
+        success: false,
+        code: "CPF_INVALIDO",
+        message: "CPF inválido. Deve conter 11 dígitos."
+      });
+    }
+
+    console.log(`[GRUPO PIX] 1 - requisição validada (Grupo: ${groupId}, Cliente: ${buyerNameClean})`);
 
     // VERIFICAÇÃO DE CONFLITO: Telefone já associado a outro nome cadastrado
     try {
@@ -360,7 +373,7 @@ async function startServer() {
       if (existingRegisteredName) {
         const matches = areNamesMatching(existingRegisteredName, buyerNameClean);
         if (!matches) {
-          console.warn(`[PAYMENT CONFLITO server.ts] WhatsApp ${buyerPhoneClean} já associado a outro cadastro.`);
+          console.warn(`[GRUPO PIX ERROR] Ponto: conflito de telefone, Motivo: WhatsApp já associado a outro cadastro, Status: 400`);
           return res.status(400).json({
             success: false,
             code: "PHONE_NAME_MISMATCH",
@@ -369,7 +382,7 @@ async function startServer() {
         }
       }
     } catch (checkErr: any) {
-      console.error("[PAYMENT GRUPO PIX server.ts] Erro ao validar telefone existente:", checkErr.message || String(checkErr));
+      console.error("[GRUPO PIX ERROR] Ponto: checagem de telefone existente, Erro:", checkErr.message || String(checkErr));
     }
 
     try {
@@ -381,6 +394,8 @@ async function startServer() {
       let groupTitle = "Grupo Pix";
       let entryFee = 0;
 
+      console.log(`[GRUPO PIX] 2 - buscando grupo ${groupId}`);
+
       try {
         await db.runTransaction(async (transaction: any) => {
           const groupSnap = await transaction.get(groupRef);
@@ -388,27 +403,32 @@ async function startServer() {
             throw { status: 404, message: "Grupo Pix não encontrado." };
           }
           const groupData = groupSnap.data()!;
+          console.log(`[GRUPO PIX] 3 - grupo encontrado: ${groupData.name || groupData.title || groupId}, status: ${groupData.status}`);
+
           if (groupData.status !== "active") {
             throw { status: 400, message: "Este Grupo Pix não está ativo para novas participações." };
           }
-          const maxParticipants = Number(groupData.maxParticipants || 0);
-          const currentParticipants = Number(groupData.currentParticipants || 0);
+          const maxParticipants = Number(groupData.maxParticipants || groupData.max_participations || 0);
+          const currentParticipants = Number(groupData.currentParticipants || groupData.valid_participations_count || 0);
           if (maxParticipants > 0 && currentParticipants >= maxParticipants) {
             throw { status: 400, message: "Este Grupo Pix já atingiu o limite máximo de participantes." };
           }
 
           groupTitle = groupData.name || groupData.title || "Grupo Pix";
-          entryFee = Number(groupData.participation_price ?? groupData.entryFee ?? 0);
+          entryFee = Number(groupData.participation_price ?? groupData.entryFee ?? groupData.participationPrice ?? 0);
 
           if (entryFee <= 0) {
             throw { status: 400, message: "Valor de participação inválido no grupo." };
           }
 
+          console.log(`[GRUPO PIX] 4 - preço validado: R$ ${entryFee}`);
+          console.log(`[GRUPO PIX] 5 - criando compra ${identifier}`);
+
           const compraRef = db.collection("compras").doc(identifier);
           transaction.set(compraRef, {
             nome: buyerNameClean,
             telefone: buyerPhoneClean,
-            cpf: normalizeCPF(buyer.cpf),
+            cpf: normalizedCPFVal,
             identifier: identifier,
             external_id: identifier,
             status: "pending_payment",
@@ -425,17 +445,20 @@ async function startServer() {
           });
         });
       } catch (txErr: any) {
+        console.error(`[GRUPO PIX ERROR] Ponto: transação Firestore, Erro: ${txErr.message || String(txErr)}, Status: ${txErr.status || 500}`);
         if (txErr.status && txErr.message) {
           return res.status(txErr.status).json({ success: false, message: txErr.message });
         }
         throw txErr;
       }
 
-      // Chamada à SyncPayments para Grupo Pix
+      // Chamada à SyncPayments para Grupo Pix (reutiliza mecanismo existente)
+      console.log(`[GRUPO PIX] 6 - chamando mecanismo de pagamento existente (SyncPayments)`);
       let accessToken;
       try {
         accessToken = await generateToken();
       } catch (authErr: any) {
+        console.error(`[GRUPO PIX ERROR] Ponto: autenticação SyncPayments, Erro: ${authErr.message}`);
         await db.collection("compras").doc(identifier).update({
           status: "payment_creation_failed",
           cancelled_at: admin.firestore.FieldValue.serverTimestamp()
@@ -458,18 +481,17 @@ async function startServer() {
         external_id: String(identifier),
         client: {
           name: buyerNameClean,
-          cpf: normalizeCPF(buyer.cpf),
+          cpf: normalizedCPFVal,
           email: (buyer as any).email || "cliente@exemplo.com",
           phone: buyerPhoneClean
         }
       };
 
-      console.log(`[API PIX GrupoPix server.ts] Criando cobrança para ${identifier}. Grupo: ${groupId}, Valor: ${entryFee}`);
-
       let syncPayResult;
       try {
         syncPayResult = await createCashIn(accessToken, payload);
       } catch (apiErr: any) {
+        console.error(`[GRUPO PIX ERROR] Ponto: criação Cash-In SyncPayments, Erro: ${apiErr.message}`);
         await db.collection("compras").doc(identifier).update({
           status: "payment_creation_failed",
           cancelled_at: admin.firestore.FieldValue.serverTimestamp()
@@ -481,6 +503,7 @@ async function startServer() {
       const gatewayId = String(syncPayResult.identifier || "");
 
       if (!pix_code) {
+        console.error(`[GRUPO PIX ERROR] Ponto: retorno SyncPayments sem código PIX`);
         await db.collection("compras").doc(identifier).update({
           status: "payment_creation_failed",
           cancelled_at: admin.firestore.FieldValue.serverTimestamp()
@@ -505,7 +528,7 @@ async function startServer() {
             color: { dark: '#000000', light: '#ffffff' }
           });
         } catch (qrErr: any) {
-          console.error("Erro ao gerar QR Code base64 Grupo Pix server.ts:", qrErr.message);
+          console.error("[GRUPO PIX ERROR] Ponto: geração de QR Code base64, Erro:", qrErr.message);
         }
       }
 
@@ -514,6 +537,9 @@ async function startServer() {
         gateway_id: gatewayId,
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
+
+      console.log(`[GRUPO PIX] 7 - pagamento criado com sucesso (ID: ${identifier})`);
+      console.log(`[GRUPO PIX] 8 - resposta enviada`);
 
       return res.json({
         success: true,
@@ -524,12 +550,13 @@ async function startServer() {
         valor: entryFee,
         type: "grupo_pix",
         groupId: groupId,
+        cpf: payload.client.cpf,
         expires_at: expiresAtDate.toISOString(),
         expires_at_timestamp: expiresAtTimestamp
       });
 
     } catch (error: any) {
-      console.error("Erro ao criar pagamento Grupo Pix server.ts:", error.message);
+      console.error(`[GRUPO PIX ERROR] Ponto: geral Grupo Pix, Erro: ${error.message || String(error)}`);
       return res.status(500).json({ success: false, message: error.message || "Erro ao processar pagamento" });
     }
   }

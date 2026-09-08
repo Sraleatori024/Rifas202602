@@ -262,18 +262,18 @@ async function createCashIn(token: string, payload: any) {
 // ============================================================================
 async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db: any) {
   const groupId = req.body.groupId || req.body.pixGroupId;
-  const buyer = req.body.buyer || {
-    name: req.body.nome || req.body.name,
-    whatsapp: req.body.telefone || req.body.whatsapp || req.body.phone,
-    cpf: req.body.cpf
-  };
+  const buyer = req.body.buyer || {};
+  const rawBuyerName = buyer.name || req.body.nome || req.body.name || "";
+  const rawBuyerPhone = buyer.whatsapp || buyer.phone || buyer.telefone || req.body.telefone || req.body.whatsapp || req.body.phone || "";
+  const rawBuyerCpf = buyer.cpf || req.body.cpf || "";
 
-  const buyerNameClean = String(buyer?.name || "").trim();
-  const buyerPhoneClean = normalizePhone(buyer?.whatsapp || "");
+  const buyerNameClean = String(rawBuyerName).trim();
+  const buyerPhoneClean = normalizePhone(rawBuyerPhone);
 
   console.log(`[PAYMENT GRUPO PIX] Nova tentativa: Grupo ${groupId} | Cliente: ${buyerNameClean}`);
 
   if (!groupId || !buyerPhoneClean || !buyerNameClean || buyerNameClean.length < 3) {
+    console.warn(`[GRUPO PIX ERROR] Ponto: validação de entrada, Motivo: campos obrigatórios ausentes (groupId: ${!!groupId}, phone: ${!!buyerPhoneClean}, name: ${!!buyerNameClean}), Status: 400`);
     return res.status(400).json({ 
       success: false, 
       message: "Nome Completo, WhatsApp e Grupo são obrigatórios para participar." 
@@ -281,6 +281,7 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
   }
 
   if (buyerPhoneClean.length < 10 || buyerPhoneClean.length > 11) {
+    console.warn(`[GRUPO PIX ERROR] Ponto: validação de telefone, Motivo: comprimento inválido (${buyerPhoneClean.length}), Status: 400`);
     return res.status(400).json({
       success: false,
       code: "TELEFONE_INVALIDO",
@@ -288,14 +289,17 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
     });
   }
 
-  const normalizedCPFVal = normalizeCPF(buyer.cpf);
-  if (buyer.cpf && normalizedCPFVal.length !== 11) {
+  const normalizedCPFVal = normalizeCPF(rawBuyerCpf);
+  if (rawBuyerCpf && normalizedCPFVal.length !== 11) {
+    console.warn(`[GRUPO PIX ERROR] Ponto: validação de CPF, Motivo: CPF com tamanho inválido (${normalizedCPFVal.length}), Status: 400`);
     return res.status(400).json({
       success: false,
       code: "CPF_INVALIDO",
       message: "CPF inválido. Deve conter 11 dígitos."
     });
   }
+
+  console.log(`[GRUPO PIX] 1 - requisição validada (Grupo: ${groupId}, Cliente: ${buyerNameClean})`);
 
   // Verificação de conflito: WhatsApp já cadastrado com outro nome
   try {
@@ -323,6 +327,7 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
     if (existingRegisteredName) {
       const matches = areNamesMatching(existingRegisteredName, buyerNameClean);
       if (!matches) {
+        console.warn(`[GRUPO PIX ERROR] Ponto: conflito de telefone, Motivo: telefone associado a outro nome, Status: 400`);
         return res.status(400).json({
           success: false,
           code: "PHONE_NAME_MISMATCH",
@@ -331,7 +336,7 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
       }
     }
   } catch (checkErr: any) {
-    console.error("[PAYMENT GRUPO PIX] Erro ao validar telefone existente:", checkErr.message || String(checkErr));
+    console.error("[GRUPO PIX ERROR] Ponto: checagem de telefone existente, Erro:", checkErr.message || String(checkErr));
   }
 
   const identifier = `compra_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -342,6 +347,8 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
   let groupTitle = "Grupo Pix";
   let entryFee = 0;
 
+  console.log(`[GRUPO PIX] 2 - buscando grupo ${groupId}`);
+
   try {
     await db.runTransaction(async (transaction: any) => {
       const groupSnap = await transaction.get(groupRef);
@@ -349,21 +356,26 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
         throw { status: 404, message: "Grupo Pix não encontrado." };
       }
       const groupData = groupSnap.data()!;
+      console.log(`[GRUPO PIX] 3 - grupo encontrado: ${groupData.name || groupData.title || groupId}, status: ${groupData.status}`);
+
       if (groupData.status !== "active") {
         throw { status: 400, message: "Este Grupo Pix não está ativo para novas participações." };
       }
-      const maxParticipants = Number(groupData.maxParticipants || 0);
-      const currentParticipants = Number(groupData.currentParticipants || 0);
+      const maxParticipants = Number(groupData.maxParticipants || groupData.max_participations || 0);
+      const currentParticipants = Number(groupData.currentParticipants || groupData.valid_participations_count || 0);
       if (maxParticipants > 0 && currentParticipants >= maxParticipants) {
         throw { status: 400, message: "Este Grupo Pix já atingiu o limite máximo de participantes." };
       }
 
       groupTitle = groupData.name || groupData.title || "Grupo Pix";
-      entryFee = Number(groupData.participation_price ?? groupData.entryFee ?? 0);
+      entryFee = Number(groupData.participation_price ?? groupData.entryFee ?? groupData.participationPrice ?? 0);
 
       if (entryFee <= 0) {
         throw { status: 400, message: "Valor de participação inválido no grupo." };
       }
+
+      console.log(`[GRUPO PIX] 4 - preço validado: R$ ${entryFee}`);
+      console.log(`[GRUPO PIX] 5 - criando compra ${identifier}`);
 
       const compraRef = db.collection("compras").doc(identifier);
       transaction.set(compraRef, {
@@ -386,17 +398,20 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
       });
     });
   } catch (txErr: any) {
+    console.error(`[GRUPO PIX ERROR] Ponto: transação Firestore, Erro: ${txErr.message || String(txErr)}, Status: ${txErr.status || 500}`);
     if (txErr.status && txErr.message) {
       return res.status(txErr.status).json({ success: false, message: txErr.message });
     }
     throw txErr;
   }
 
-  // Token SyncPayments
+  // Token SyncPayments (reutiliza mecanismo existente)
+  console.log(`[GRUPO PIX] 6 - chamando mecanismo de pagamento existente (SyncPayments)`);
   let accessToken;
   try {
     accessToken = await generateToken();
   } catch (authErr: any) {
+    console.error(`[GRUPO PIX ERROR] Ponto: autenticação SyncPayments, Erro: ${authErr.message}`);
     await db.collection("compras").doc(identifier).update({
       status: "payment_creation_failed",
       cancelled_at: admin.firestore.FieldValue.serverTimestamp()
@@ -425,12 +440,11 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
     }
   };
 
-  console.log(`[API PIX GrupoPix] Criando cobrança para ${identifier}. Grupo: ${groupId}, Valor: ${entryFee}`);
-
   let syncPayResult;
   try {
     syncPayResult = await createCashIn(accessToken, payload);
   } catch (apiErr: any) {
+    console.error(`[GRUPO PIX ERROR] Ponto: criação Cash-In SyncPayments, Erro: ${apiErr.message}`);
     await db.collection("compras").doc(identifier).update({
       status: "payment_creation_failed",
       cancelled_at: admin.firestore.FieldValue.serverTimestamp()
@@ -442,6 +456,7 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
   const gatewayId = String(syncPayResult.identifier || syncPayResult.id || "");
 
   if (!pix_code) {
+    console.error(`[GRUPO PIX ERROR] Ponto: retorno SyncPayments sem código PIX`);
     await db.collection("compras").doc(identifier).update({
       status: "payment_creation_failed",
       cancelled_at: admin.firestore.FieldValue.serverTimestamp()
@@ -466,7 +481,7 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
         color: { dark: '#000000', light: '#ffffff' }
       });
     } catch (qrErr: any) {
-      console.error("Erro ao gerar QR Code base64 Grupo Pix:", qrErr.message);
+      console.error("[GRUPO PIX ERROR] Ponto: geração de QR Code base64, Erro:", qrErr.message);
     }
   }
 
@@ -475,6 +490,9 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
     gateway_id: gatewayId,
     updated_at: admin.firestore.FieldValue.serverTimestamp()
   });
+
+  console.log(`[GRUPO PIX] 7 - pagamento criado com sucesso (ID: ${identifier})`);
+  console.log(`[GRUPO PIX] 8 - resposta enviada`);
 
   return res.json({
     success: true,
