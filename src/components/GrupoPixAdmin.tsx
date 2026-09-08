@@ -22,7 +22,9 @@ import {
   Check,
   ShieldCheck,
   Filter,
-  Calendar
+  Calendar,
+  Clapperboard,
+  FlaskConical
 } from 'lucide-react';
 import { 
   collection, 
@@ -66,11 +68,24 @@ export const GrupoPixAdmin: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'pending' | 'cancelled'>('all');
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Draw Execution States (Backend)
+  // Draw Execution States (Backend & Visual Experience)
   const [executingDrawGroup, setExecutingDrawGroup] = useState<PixGroup | null>(null);
+  const [isTestDrawMode, setIsTestDrawMode] = useState<boolean>(false);
+  const [showOfficialConfirmModal, setShowOfficialConfirmModal] = useState<PixGroup | null>(null);
   const [drawLoading, setDrawLoading] = useState(false);
   const [drawResult, setDrawResult] = useState<any | null>(null);
   const [drawError, setDrawError] = useState<string | null>(null);
+
+  // Iniciar Modo de Teste Administrativo (100% em memória, zero gravação, zero Firebase, zero backend draw)
+  const handleOpenTestDraw = (groupToTest: PixGroup) => {
+    setIsTestDrawMode(true);
+    setExecutingDrawGroup(groupToTest);
+  };
+
+  // Abrir Modal de Confirmação para o Sorteio Oficial (Etapa 2 do Requisito 13)
+  const handleOpenOfficialConfirm = (groupToDraw: PixGroup) => {
+    setShowOfficialConfirmModal(groupToDraw);
+  };
 
   // 1. Subscribe to pix_groups
   useEffect(() => {
@@ -485,21 +500,33 @@ export const GrupoPixAdmin: React.FC = () => {
 
               {/* Botões de Ação do Grupo */}
               <div className="flex flex-wrap items-center gap-3">
+                {/* BOTÃO TESTAR SORTEIO */}
+                <button
+                  id="btn-testar-sorteio-header"
+                  onClick={() => handleOpenTestDraw(selectedGroup)}
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/40 font-black text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+                  title="Testar experiência visual com participantes fictícios"
+                >
+                  <Clapperboard className="w-4 h-4 text-cyan-400" />
+                  <span>🎬 TESTAR SORTEIO</span>
+                </button>
+
+                {/* BOTÃO SORTEIO OFICIAL */}
                 {selectedGroup.status !== 'drawn' && (
                   <button
                     id="btn-iniciar-sorteio-grupo"
-                    onClick={() => setExecutingDrawGroup(selectedGroup)}
+                    onClick={() => handleOpenOfficialConfirm(selectedGroup)}
                     disabled={groupStats.participacoesValidas === 0}
-                    className="px-5 py-3 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     <Trophy className="w-4 h-4 text-slate-950" />
-                    Iniciar Sorteio Oficial
+                    <span>🏆 SORTEIO OFICIAL</span>
                   </button>
                 )}
 
                 <button
                   onClick={() => handleDeleteGroup(selectedGroup.id)}
-                  className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-slate-200"
+                  className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-slate-200"
                   title="Excluir Grupo"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -543,6 +570,107 @@ export const GrupoPixAdmin: React.FC = () => {
                     {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* ========================================================================= */}
+            {/* PAINEL DE SORTEIO (SEÇÃO 19: TESTAR SORTEIO vs SORTEIO OFICIAL)          */}
+            {/* ========================================================================= */}
+            <div className="p-5 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 rounded-3xl text-white shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+                    <Trophy className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Módulo de Sorteio
+                    </span>
+                    <h3 className="text-base font-black text-white">
+                      SORTEIO DO GRUPO PIX
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                    selectedGroup.status === 'drawn'
+                      ? 'bg-purple-500/10 text-purple-300 border-purple-500/30'
+                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  }`}>
+                    {selectedGroup.status === 'drawn' ? 'STATUS: SORTEADO' : 'STATUS: ATIVO'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Informações Estruturadas do Painel de Sorteio */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-3.5 bg-slate-800/60 rounded-2xl border border-slate-700/60 space-y-1">
+                  <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                    Participantes Válidos
+                  </span>
+                  <p className="text-base font-black text-emerald-400 flex items-center gap-1.5">
+                    <Users className="w-4 h-4" />
+                    {groupStats.participacoesValidas}
+                  </p>
+                </div>
+
+                <div className="p-3.5 bg-slate-800/60 rounded-2xl border border-slate-700/60 space-y-1">
+                  <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                    Prêmio
+                  </span>
+                  <p className="text-base font-black text-amber-400 truncate">
+                    {selectedGroup.prize || (selectedGroup as any).prizeValue || 'PIX'}
+                  </p>
+                </div>
+
+                <div className="p-3.5 bg-slate-800/60 rounded-2xl border border-slate-700/60 space-y-1">
+                  <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                    Status
+                  </span>
+                  <p className="text-base font-black text-white">
+                    {selectedGroup.status === 'drawn' ? 'CONCLUÍDO' : 'ATIVO'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Ações de Sorteio com Dois Botões Distintos */}
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                {/* [ 🎬 TESTAR SORTEIO ] */}
+                <button
+                  id="btn-testar-sorteio-painel"
+                  onClick={() => handleOpenTestDraw(selectedGroup)}
+                  className="flex-1 min-w-[200px] px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 hover:border-cyan-400 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+                >
+                  <Clapperboard className="w-4 h-4 text-cyan-400" />
+                  <span>🎬 TESTAR SORTEIO</span>
+                </button>
+
+                {/* [ 🏆 SORTEIO OFICIAL ] */}
+                {selectedGroup.status !== 'drawn' ? (
+                  <button
+                    id="btn-sorteio-oficial-painel"
+                    onClick={() => handleOpenOfficialConfirm(selectedGroup)}
+                    disabled={groupStats.participacoesValidas === 0}
+                    className="flex-1 min-w-[220px] px-6 py-3.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-amber-500/25 transition-all flex items-center justify-center gap-2.5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Trophy className="w-4 h-4 text-slate-950" />
+                    <span>🏆 SORTEIO OFICIAL</span>
+                  </button>
+                ) : (
+                  <div className="flex-1 min-w-[220px] px-6 py-3.5 bg-slate-800/50 border border-slate-700/60 text-slate-400 font-bold text-xs rounded-2xl text-center flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-purple-400" />
+                    <span>Sorteio Oficial Já Realizado</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Aviso Explícito do Modo de Teste */}
+              <div className="p-3 bg-cyan-950/40 border border-cyan-800/50 rounded-2xl text-xs text-cyan-300 flex items-center gap-2.5">
+                <FlaskConical className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>
+                  <strong>🧪 MODO DE TESTE:</strong> Nenhuma informação real será modificada.
+                </span>
               </div>
             </div>
 
@@ -1328,6 +1456,83 @@ export const GrupoPixAdmin: React.FC = () => {
         </div>
       )}
 
+      {/* Modal de Confirmação do Sorteio Oficial (Etapa 2 do Requisito 13) */}
+      {showOfficialConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-6 text-slate-900">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                <Trophy className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">
+                  Confirmação de Segurança
+                </span>
+                <h3 className="text-lg font-black text-slate-900 mt-0.5">
+                  Realizar Sorteio Oficial
+                </h3>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-600 font-medium">
+                Você está prestes a realizar o sorteio oficial deste Grupo Pix.
+              </p>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">Grupo:</span>
+                  <span className="font-black text-slate-900 text-sm">{showOfficialConfirmModal.name || (showOfficialConfirmModal as any).title}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">Participantes Válidos:</span>
+                  <span className="font-black text-emerald-700 text-sm">
+                    {participations.filter(p => (p.groupId === showOfficialConfirmModal.id || p.group_id === showOfficialConfirmModal.id) && (p.status === 'valid' || p.status === 'active')).length} bilhetes elegíveis
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">Prêmio:</span>
+                  <span className="font-black text-amber-600 text-sm">{showOfficialConfirmModal.prize || (showOfficialConfirmModal as any).prizeValue || 'PIX'}</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] font-bold flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Aviso:</strong> O resultado será gerado no servidor por aleatoriedade criptográfica e registrado permanentemente no Firestore (em <code>pix_draws</code> e no status do grupo). Esta ação é definitiva e irreversível.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                id="btn-cancelar-sorteio-oficial"
+                type="button"
+                onClick={() => setShowOfficialConfirmModal(null)}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold text-xs transition-all cursor-pointer"
+              >
+                CANCELAR
+              </button>
+
+              <button
+                id="btn-confirmar-sorteio-oficial"
+                type="button"
+                onClick={() => {
+                  const targetGroup = showOfficialConfirmModal;
+                  setShowOfficialConfirmModal(null);
+                  setIsTestDrawMode(false);
+                  setExecutingDrawGroup(targetGroup);
+                }}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <Trophy className="w-4 h-4 text-slate-950" />
+                REALIZAR SORTEIO
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Experiência Visual Premium e Cinematográfica de Sorteio */}
       {executingDrawGroup && (
         <GrupoPixDrawExperience
@@ -1337,8 +1542,10 @@ export const GrupoPixAdmin: React.FC = () => {
                  (p.status === 'valid' || p.status === 'active')
           )}
           isOpen={!!executingDrawGroup}
+          isTestMode={isTestDrawMode}
           onClose={() => {
             setExecutingDrawGroup(null);
+            setIsTestDrawMode(false);
             setDrawResult(null);
             setDrawError(null);
           }}
