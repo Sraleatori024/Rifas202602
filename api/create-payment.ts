@@ -498,6 +498,7 @@ async function handleGrupoPixPayment(req: VercelRequest, res: VercelResponse, db
     success: true,
     pix_code,
     qr_code: qrCodeImage,
+    pix_qrcode: qrCodeImage,
     identifier,
     valor: entryFee,
     type: "grupo_pix",

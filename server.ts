@@ -545,6 +545,7 @@ async function startServer() {
         success: true,
         pix_code,
         qr_code: qrCodeImage,
+        pix_qrcode: qrCodeImage,
         identifier,
         numbers: [],
         valor: entryFee,
@@ -1173,8 +1174,9 @@ async function startServer() {
           whatsappGroupUrl = groupData.access_link || groupData.whatsappGroupUrl || "";
           telegramGroupUrl = groupData.telegramGroupUrl || (groupData.type === 'telegram' ? groupData.access_link : "") || "";
 
-          // Gera código único criptográfico de 8 caracteres alfanuméricos
-          participationCode = `GPX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+          // Gera código oficial sequencial e único do Grupo Pix (Ex: GP-000001)
+          const nextIndex = Number(groupData.valid_participations_count || groupData.total_participations_count || 0) + 1;
+          participationCode = `GP-${String(nextIndex).padStart(6, '0')}`;
           const participationId = `part_${paymentId}`;
           const participationRef = db.collection("pix_participations").doc(participationId);
 
@@ -1197,9 +1199,10 @@ async function startServer() {
             amount: Number(purchaseData.valor || groupData.participation_price || 0),
             participationCode: participationCode,
             participation_code: participationCode,
+            code: participationCode,
             paidAt: admin.firestore.FieldValue.serverTimestamp(),
             confirmed_at: admin.firestore.FieldValue.serverTimestamp(),
-            status: "active",
+            status: "valid",
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             created_at: admin.firestore.FieldValue.serverTimestamp()
           });
@@ -1717,110 +1720,110 @@ async function startServer() {
   // GRUPO PIX: SORTEIO EXCLUSIVAMENTE NO BACKEND
   // =======================================================
   app.post("/api/grupo-pix/draw", async (req, res) => {
-    const { groupId } = req.body || {};
+    res.setHeader('Content-Type', 'application/json');
+    const { groupId, adminId } = req.body || {};
     if (!groupId) {
-      return res.status(400).json({ success: false, message: "ID do grupo é obrigatório." });
+      return res.status(400).json({ success: false, message: "ID do grupo (groupId) é obrigatório." });
     }
 
     try {
       const db = getDb();
-      const groupRef = db.collection("pix_groups").doc(String(groupId).trim());
+      const cleanGroupId = String(groupId).trim();
+      const groupRef = db.collection("pix_groups").doc(cleanGroupId);
 
-      let drawResult: any = null;
+      const groupSnap = await groupRef.get();
+      if (!groupSnap.exists) {
+        return res.status(404).json({ success: false, message: "Grupo Pix não encontrado." });
+      }
 
-      await db.runTransaction(async (transaction: any) => {
-        const groupSnap = await transaction.get(groupRef);
-        if (!groupSnap.exists) {
-          throw { status: 404, message: "Grupo Pix não encontrado." };
+      const groupData = groupSnap.data()!;
+      // Regra de sorteio único: Não permitir novo sorteio se o grupo já foi sorteado
+      if (groupData.status === "completed" || groupData.status === "drawn") {
+        return res.status(400).json({ success: false, message: "Este sorteio já foi realizado anteriormente e não pode ser refeito." });
+      }
+
+      // Busca somente participações daquele groupId
+      const participationsSnap = await db.collection("pix_participations")
+        .where("groupId", "==", cleanGroupId)
+        .get();
+
+      // Considera somente status == "valid" (ou "active" legado), excluindo explicitamente canceladas ou pendentes
+      const validParticipants: any[] = [];
+      participationsSnap.forEach((doc: any) => {
+        const data = doc.data();
+        const st = String(data.status || "").toLowerCase();
+        if (st === "valid" || st === "active") {
+          validParticipants.push({ docId: doc.id, ...data });
         }
-        const groupData = groupSnap.data()!;
-        if (groupData.status === "completed" || groupData.status === "drawn") {
-          throw { status: 400, message: "Este sorteio já foi realizado anteriormente." };
-        }
-
-        // Busca todas as participações ativas do grupo
-        const participationsSnap = await db.collection("pix_participations")
-          .where("groupId", "==", String(groupId).trim())
-          .where("status", "==", "active")
-          .get();
-
-        if (participationsSnap.empty) {
-          throw { status: 400, message: "Nenhuma participação confirmada encontrada para realizar o sorteio." };
-        }
-
-        const participants: any[] = [];
-        participationsSnap.forEach((doc: any) => {
-          participants.push({ docId: doc.id, ...doc.data() });
-        });
-
-        // Sorteio criptograficamente seguro no backend
-        const randomBuffer = crypto.randomBytes(4);
-        const randomIndex = randomBuffer.readUInt32BE(0) % participants.length;
-        const winner = participants[randomIndex];
-
-        // Mascara telefone do vencedor para exibição pública segura (ex: (11) 9****-1234)
-        const rawWinnerPhone = String(winner.buyer_phone || winner.userPhone || "");
-        const maskedPhone = rawWinnerPhone.length >= 8 
-          ? rawWinnerPhone.slice(0, 4) + "****" + rawWinnerPhone.slice(-4)
-          : "****";
-
-        const winnerCode = winner.participation_code || winner.participationCode;
-        const winnerName = winner.buyer_name || winner.userName || "Participante";
-        const groupTitle = groupData.name || groupData.title || "Grupo Pix";
-        const prize = groupData.prize || groupData.prizeValue || "Prêmio PIX";
-
-        const drawId = `draw_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        const drawRef = db.collection("pix_draws").doc(drawId);
-
-        drawResult = {
-          id: drawId,
-          groupId: String(groupId).trim(),
-          group_id: String(groupId).trim(),
-          groupTitle: groupTitle,
-          group_name: groupTitle,
-          prize: prize,
-          prizeValue: Number(groupData.prizeValue || 0),
-          winnerParticipationCode: winnerCode,
-          winner_code: winnerCode,
-          winner_participation_id: winner.docId || winner.id,
-          winnerName: winnerName,
-          winner_name: winnerName,
-          winnerPhone: rawWinnerPhone,
-          winner_phone_masked: maskedPhone,
-          drawnAt: admin.firestore.FieldValue.serverTimestamp(),
-          created_at: admin.firestore.FieldValue.serverTimestamp(),
-          drawn_by: "system_backend",
-          status: "completed",
-          totalParticipants: participants.length,
-          valid_participations_count: participants.length,
-          winnerIndex: randomIndex,
-          allParticipationCodes: participants.map((p: any) => p.participation_code || p.participationCode)
-        };
-
-        // Salva o registro imutável do sorteio
-        transaction.set(drawRef, drawResult);
-
-        // Atualiza o status do grupo para concluído/sorteado
-        transaction.update(groupRef, {
-          status: "drawn",
-          winnerParticipationCode: winnerCode,
-          winner_code: winnerCode,
-          winnerName: winnerName,
-          winner_name: winnerName,
-          winnerPhoneMasked: maskedPhone,
-          winner_phone_masked: maskedPhone,
-          drawnAt: admin.firestore.FieldValue.serverTimestamp(),
-          draw_date: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updated_at: admin.firestore.FieldValue.serverTimestamp()
-        });
       });
 
-      console.log(`[SORTEIO GRUPO PIX] Sorteio realizado com sucesso para o Grupo ${groupId}. Vencedor: ${drawResult.winnerName} (${drawResult.winnerParticipationCode})`);
+      if (validParticipants.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Nenhuma participação válida encontrada para este grupo."
+        });
+      }
 
-      return res.json({
+      // Sorteio criptograficamente seguro no backend
+      const randomBuffer = crypto.randomBytes(4);
+      const randomIndex = randomBuffer.readUInt32BE(0) % validParticipants.length;
+      const winner = validParticipants[randomIndex];
+
+      const winnerCode = winner.participationCode || winner.participation_code || winner.code || winner.docId;
+      const winnerName = winner.buyer_name || winner.userName || winner.name || "Participante";
+      const winnerParticipationId = winner.id || winner.docId || winnerCode;
+      const groupTitle = groupData.name || groupData.title || "Grupo Pix";
+      const prize = groupData.prize || groupData.prizeValue || "Prêmio PIX";
+
+      const drawId = `draw_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+      const drawRef = db.collection("pix_draws").doc(drawId);
+
+      // Registro do sorteio (NÃO armazena CPF ou telefone na informação pública)
+      const drawResult = {
+        id: drawId,
+        groupId: cleanGroupId,
+        group_id: cleanGroupId,
+        groupTitle: groupTitle,
+        group_name: groupTitle,
+        prize: prize,
+        participationId: winnerParticipationId,
+        code: winnerCode,
+        winnerParticipationCode: winnerCode,
+        winner_code: winnerCode,
+        winner_participation_id: winnerParticipationId,
+        winnerName: winnerName,
+        winner_name: winnerName,
+        drawnAt: admin.firestore.FieldValue.serverTimestamp(),
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+        drawn_by: adminId || "system_backend",
+        status: "completed",
+        totalValidParticipations: validParticipants.length,
+        winnerIndex: randomIndex
+      };
+
+      await drawRef.set(drawResult);
+
+      // Atualiza o status do grupo para drawn (sorteio único)
+      await groupRef.update({
+        status: "drawn",
+        winnerParticipationCode: winnerCode,
+        winner_code: winnerCode,
+        winnerName: winnerName,
+        winner_name: winnerName,
+        drawnAt: admin.firestore.FieldValue.serverTimestamp(),
+        draw_date: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      console.log(`[SORTEIO GRUPO PIX] Sorteio realizado com sucesso para o Grupo ${cleanGroupId}. Vencedor: ${winnerName} (${winnerCode})`);
+
+      return res.status(200).json({
         success: true,
-        message: "Sorteio realizado com sucesso!",
+        groupId: cleanGroupId,
+        participationId: winnerParticipationId,
+        code: winnerCode,
+        winnerName: winnerName,
         draw: drawResult
       });
 

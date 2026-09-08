@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { 
   Users, 
   MessageCircle, 
@@ -123,6 +124,30 @@ export const GrupoPixPublic: React.FC<GrupoPixPublicProps> = () => {
         throw new Error(data.message || data.error || 'Erro ao gerar cobrança PIX.');
       }
 
+      // Resolução segura do QR Code visual
+      let qrImage = data.qr_code || data.pix_qrcode || data.qrcode || '';
+      if (qrImage && typeof qrImage === 'string') {
+        if (!qrImage.startsWith('data:image/') && !qrImage.startsWith('http://') && !qrImage.startsWith('https://')) {
+          if (qrImage.length > 100 && !qrImage.startsWith('000201')) {
+            qrImage = `data:image/png;base64,${qrImage}`;
+          }
+        }
+      }
+
+      // Se ainda não tiver imagem do QR Code e houver código copia e cola (EMV), gera no cliente
+      if ((!qrImage || qrImage.startsWith('000201')) && data.pix_code) {
+        try {
+          qrImage = await QRCode.toDataURL(data.pix_code, {
+            width: 320,
+            margin: 2,
+            color: { dark: '#000000', light: '#ffffff' }
+          });
+        } catch (qrGenErr: any) {
+          console.error("Erro ao gerar QR Code:", qrGenErr);
+        }
+      }
+
+      data.resolvedQr = qrImage;
       setPaymentData(data);
     } catch (err: any) {
       console.error("Erro ao criar participação:", err);
@@ -579,10 +604,17 @@ export const GrupoPixPublic: React.FC<GrupoPixPublicProps> = () => {
                   Aguardando Confirmação do PIX
                 </div>
 
-                {paymentData.pix_qrcode ? (
+                {/* Visual do QR Code */}
+                {paymentData.resolvedQr || paymentData.qr_code || paymentData.pix_qrcode ? (
                   <div className="flex justify-center p-3 bg-white border border-slate-100 rounded-2xl shadow-inner max-w-[220px] mx-auto">
                     <img 
-                      src={`data:image/png;base64,${paymentData.pix_qrcode}`} 
+                      src={(() => {
+                        const qr = paymentData.resolvedQr || paymentData.qr_code || paymentData.pix_qrcode;
+                        if (qr.startsWith('data:image/') || qr.startsWith('http://') || qr.startsWith('https://')) {
+                          return qr;
+                        }
+                        return `data:image/png;base64,${qr}`;
+                      })()} 
                       alt="QR Code PIX" 
                       className="w-full h-auto"
                     />

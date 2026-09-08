@@ -349,8 +349,9 @@ async function processPayment(docSnap: any, res: VercelResponse) {
         const whatsappGroupUrl = groupData.access_link || groupData.whatsappGroupUrl || "";
         const telegramGroupUrl = groupData.telegramGroupUrl || (groupData.type === 'telegram' ? groupData.access_link : "") || "";
 
-        // Gera código único criptográfico
-        const participationCode = `GPX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        // Gera código oficial sequencial e único do Grupo Pix (Ex: GP-000001)
+        const nextIndex = Number(groupData.valid_participations_count || groupData.total_participations_count || 0) + 1;
+        const participationCode = `GP-${String(nextIndex).padStart(6, '0')}`;
         const participationId = `part_${paymentId}`;
         const participationRef = db.collection("pix_participations").doc(participationId);
 
@@ -373,9 +374,10 @@ async function processPayment(docSnap: any, res: VercelResponse) {
           amount: Number(purchaseData.valor || groupData.participation_price || 0),
           participationCode: participationCode,
           participation_code: participationCode,
+          code: participationCode,
           paidAt: admin.firestore.FieldValue.serverTimestamp(),
           confirmed_at: admin.firestore.FieldValue.serverTimestamp(),
-          status: "active",
+          status: "valid",
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           created_at: admin.firestore.FieldValue.serverTimestamp()
         });
