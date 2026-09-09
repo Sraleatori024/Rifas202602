@@ -419,18 +419,18 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
 
   return (
     <nav className="sticky top-0 z-50 glass bg-white/90">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <Link to="/" className="flex items-center space-x-2">
-              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
-                <Ticket className="text-white w-6 h-6" />
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          <div className="flex items-center min-w-0">
+            <Link to="/" className="flex items-center space-x-2 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20 shrink-0">
+                <Ticket className="text-white w-5 h-5 sm:w-6 sm:h-6" />
               </div>
-              <div className="flex flex-col">
-                <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-600 tracking-tight leading-none">
+              <div className="flex flex-col min-w-0">
+                <span className="text-lg sm:text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-600 tracking-tight leading-none truncate">
                   Chance Club
                 </span>
-                <span className="text-[9px] font-bold text-slate-400 tracking-tight uppercase mt-0.5">
+                <span className="text-[9px] font-bold text-slate-400 tracking-tight uppercase mt-0.5 hidden sm:block truncate">
                   Participações em campanhas especiais
                 </span>
               </div>
@@ -466,19 +466,20 @@ const Navbar = ({ user, onLogout, setShowConsult }: { user: User | null, onLogou
             )}
           </div>
 
-          <div className="md:hidden flex items-center gap-4">
-            <Link to="/grupo-pix" className="text-emerald-600 font-bold text-xs flex items-center gap-1 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+          <div className="md:hidden flex items-center gap-1.5 sm:gap-3 shrink-0">
+            <Link to="/grupo-pix" className="text-emerald-600 font-bold text-xs flex items-center gap-1 bg-emerald-50 px-2 sm:px-2.5 py-1.5 rounded-lg border border-emerald-200">
               <Users className="w-3.5 h-3.5" />
-              <span>Grupo Pix</span>
+              <span className="hidden min-[360px]:inline">Grupo Pix</span>
             </Link>
             <button 
               onClick={() => setShowConsult(true)}
-              className="text-slate-600 hover:text-primary"
+              className="text-slate-600 hover:text-primary p-1"
+              title="Consultar"
             >
-              <Users className="w-6 h-6" />
+              <Search className="w-5 h-5" />
             </button>
-            <button onClick={() => setIsOpen(!isOpen)} className="text-slate-600">
-              {isOpen ? <X /> : <Menu />}
+            <button onClick={() => setIsOpen(!isOpen)} className="text-slate-600 p-1" aria-label="Menu">
+              {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
@@ -2076,65 +2077,65 @@ const DebugPanel = () => {
 
   return (
     <div className="space-y-6">
-      <div className="card p-8 space-y-6">
+      <div className="card p-4 sm:p-8 space-y-6">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
+          <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
             <Terminal className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Simulador de Pagamento (Webhook)</h3>
-            <p className="text-sm text-slate-500">Simule a confirmação de um pagamento via PIX.</p>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">Simulador de Pagamento (Webhook)</h3>
+            <p className="text-xs sm:text-sm text-slate-500">Simule a confirmação de um pagamento via PIX.</p>
           </div>
         </div>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">ID da Compra (external_id)</label>
-            <div className="flex gap-2">
+            <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">ID da Compra (external_id)</label>
+            <div className="flex flex-col sm:flex-row gap-2">
               <input 
                 type="text" 
                 value={purchaseId}
                 onChange={e => setPurchaseId(e.target.value)}
                 placeholder="Ex: compra_abc123"
-                className="flex-1 px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono text-sm"
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono text-sm w-full"
               />
               <button 
                 onClick={testWebhook}
                 disabled={loading}
-                className={cn("btn-primary px-6 flex items-center gap-2", loading && "opacity-50 cursor-not-allowed")}
+                className={cn("btn-primary px-6 py-2.5 flex items-center justify-center gap-2 w-full sm:w-auto", loading && "opacity-50 cursor-not-allowed")}
               >
                 {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                Simular Pagamento
+                <span>Simular Pagamento</span>
               </button>
             </div>
           </div>
           {result && (
-            <pre className="p-4 bg-slate-900 text-emerald-400 rounded-2xl text-xs overflow-x-auto font-mono border border-slate-800">
+            <pre className="p-4 bg-slate-900 text-emerald-400 rounded-2xl text-[11px] sm:text-xs overflow-x-auto font-mono border border-slate-800 break-words max-w-full">
               {safeStringify(result)}
             </pre>
           )}
         </div>
       </div>
 
-      <div className="card p-8 border-2 border-dashed border-primary/20 bg-primary/5">
+      <div className="card p-4 sm:p-8 border-2 border-dashed border-primary/20 bg-primary/5">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
+          <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center shrink-0">
             <RefreshCw className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Migração e Limpeza de Dados</h3>
-            <p className="text-sm text-slate-500">Corrige números antigos com status inconsistentes.</p>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">Migração e Limpeza de Dados</h3>
+            <p className="text-xs sm:text-sm text-slate-500">Corrige números antigos com status inconsistentes.</p>
           </div>
         </div>
         <button 
           onClick={runMigration}
           disabled={migrating}
           className={cn(
-            "w-full py-4 rounded-2xl font-black uppercase tracking-widest text-sm transition-all flex items-center justify-center gap-3",
+            "w-full py-3.5 sm:py-4 px-4 rounded-2xl font-black uppercase tracking-widest text-xs sm:text-sm transition-all flex items-center justify-center gap-2 sm:gap-3 text-center",
             migrating ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-primary text-white hover:bg-primary/90 shadow-lg shadow-primary/20"
           )}
         >
           {migrating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Terminal className="w-5 h-5" />}
-          Executar Migração de Status
+          <span>Executar Migração de Status</span>
         </button>
       </div>
     </div>
@@ -2584,235 +2585,401 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 w-full max-w-full overflow-hidden">
+      {/* Header com Título e Ação Principal */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 sm:mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Gerenciar Sistema</h1>
-          <p className="text-slate-500">Acompanhe suas campanhas e clientes</p>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Gerenciar Sistema</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Acompanhe suas campanhas e clientes em tempo real</p>
         </div>
-        <div className="flex gap-4">
-          <div className="bg-slate-100 p-1 rounded-xl flex">
-            <button 
-              onClick={() => setActiveTab('raffles')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-sm font-bold transition-all",
-                activeTab === 'raffles' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              Rifas
-            </button>
-            <button 
-              onClick={() => setActiveTab('customers')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-sm font-bold transition-all",
-                activeTab === 'customers' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              Clientes
-            </button>
-            <button 
-              onClick={() => setActiveTab('grupo_pix')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5",
-                activeTab === 'grupo_pix' ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              <Users className="w-3.5 h-3.5" />
-              Grupos Pix
-            </button>
-            <button 
-              onClick={() => setActiveTab('debug')}
-              className={cn(
-                "px-4 py-2 rounded-lg text-sm font-bold transition-all",
-                activeTab === 'debug' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              Testar Webhook
-            </button>
-          </div>
-          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-            <Plus className="w-5 h-5" />
-            Nova Rifa
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <button 
+            onClick={() => setShowCreate(true)} 
+            className="btn-primary flex items-center justify-center gap-2 py-2.5 px-4 text-xs sm:text-sm rounded-xl shadow-md shadow-primary/20 w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span>Nova Rifa</span>
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-        <div className="card p-6 flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-            <Ticket className="w-6 h-6" />
+      {/* Tabs de Navegação do Painel - Horizontal Scroll Suave sem quebrar no Mobile */}
+      <div className="mb-6 sm:mb-8 overflow-x-auto no-scrollbar pb-1 w-full max-w-full">
+        <div className="bg-slate-100 p-1 rounded-2xl inline-flex gap-1 min-w-full sm:min-w-0 sm:w-auto border border-slate-200/60">
+          <button 
+            onClick={() => setActiveTab('raffles')}
+            className={cn(
+              "flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap flex items-center justify-center gap-1.5 shrink-0",
+              activeTab === 'raffles' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            <Ticket className="w-3.5 h-3.5" />
+            <span>Rifas ({raffles.length})</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('customers')}
+            className={cn(
+              "flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap flex items-center justify-center gap-1.5 shrink-0",
+              activeTab === 'customers' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Clientes</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('grupo_pix')}
+            className={cn(
+              "flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap flex items-center justify-center gap-1.5 shrink-0",
+              activeTab === 'grupo_pix' ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            <Users className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Grupos Pix</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('debug')}
+            className={cn(
+              "flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap flex items-center justify-center gap-1.5 shrink-0",
+              activeTab === 'debug' ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            <Terminal className="w-3.5 h-3.5" />
+            <span>Testar Webhook</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Cards de Métricas - 1 Coluna em Mobile Pequeno, 2 em Médias, 4 em Desktop */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-8 sm:mb-12">
+        <div className="card p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
+            <Ticket className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div>
-            <p className="text-sm text-slate-500 font-bold uppercase">Total de Rifas</p>
-            <p className="text-2xl font-black text-slate-900">{raffles.length}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase truncate">Total de Rifas</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 truncate">{raffles.length}</p>
           </div>
         </div>
-        <div className="card p-6 flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-            <TrendingUp className="w-6 h-6" />
+        <div className="card p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
+            <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div>
-            <p className="text-sm text-slate-500 font-bold uppercase">Arrecadação Total</p>
-            <p className="text-2xl font-black text-slate-900">R$ {globalStats.totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-          </div>
-        </div>
-        <div className="card p-6 flex items-center gap-4">
-          <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center">
-            <Users className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-sm text-slate-500 font-bold uppercase">Clientes Únicos</p>
-            <p className="text-2xl font-black text-slate-900">{globalStats.activeCustomers}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase truncate">Arrecadação Total</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 truncate">R$ {globalStats.totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
           </div>
         </div>
-        <div className="card p-6 flex items-center gap-4">
-          <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
-            <Hash className="w-6 h-6" />
+        <div className="card p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div>
-            <p className="text-sm text-slate-500 font-bold uppercase">Números Vendidos</p>
-            <p className="text-2xl font-black text-slate-900">{globalStats.totalSold}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase truncate">Clientes Únicos</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 truncate">{globalStats.activeCustomers}</p>
+          </div>
+        </div>
+        <div className="card p-4 sm:p-6 flex items-center gap-3 sm:gap-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
+            <Hash className="w-5 h-5 sm:w-6 sm:h-6" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase truncate">Números Vendidos</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-900 truncate">{globalStats.totalSold}</p>
           </div>
         </div>
       </div>
 
       {activeTab === 'raffles' ? (
-        <div className="card overflow-hidden">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Rifa</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vendas</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Arrecadação</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Clientes</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {raffles.map(raffle => {
-                const raffleStats = getRaffleStats(raffle.id);
-                return (
-                  <tr key={raffle.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <img 
-                          src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} 
-                          className="w-10 h-10 rounded-lg object-cover" 
-                          referrerPolicy="no-referrer"
-                        />
-                        <div>
-                          <p className="font-bold text-slate-900">{raffle.name}</p>
-                          <p className="text-xs text-slate-500">{raffle.total_numbers} números</p>
-                        </div>
+        <div className="space-y-4">
+          {/* Visualização em Cards para Mobile (abaixo de lg) */}
+          <div className="lg:hidden space-y-3">
+            {raffles.map(raffle => {
+              const raffleStats = getRaffleStats(raffle.id);
+              return (
+                <div key={raffle.id} className="card p-4 space-y-3.5 border border-slate-200 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img 
+                        src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} 
+                        className="w-12 h-12 rounded-xl object-cover shrink-0 border border-slate-100" 
+                        referrerPolicy="no-referrer"
+                        alt={raffle.name}
+                      />
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 text-sm truncate">{raffle.name}</p>
+                        <p className="text-xs text-slate-500">{raffle.total_numbers} números • R$ {Number(raffle.price).toFixed(2)}</p>
                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-900">{raffleStats.soldNumbers}</span>
-                        <span className="text-[10px] text-slate-400 uppercase">Números vendidos</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-primary">R$ {raffleStats.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                        <span className="text-[10px] text-slate-400 uppercase">Total arrecadado</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-700">{raffleStats.uniqueCustomers}</span>
-                        <span className="text-[10px] text-slate-400 uppercase">Clientes únicos</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={cn(
-                        "px-2 py-1 rounded-full text-xs font-bold",
-                        raffle.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-                      )}>
-                        {raffle.active ? 'Ativa' : 'Inativa'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-2">
-                        <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Editar"><Settings className="w-4 h-4" /></button>
-                        <button 
-                          onClick={() => handleDraw(raffle)} 
-                          className={cn(
-                            "p-2 transition-colors",
-                            isGoalMet(raffle, raffleStats) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
-                          )}
-                          title={isGoalMet(raffle, raffleStats) ? "Sortear" : "Meta não atingida"}
-                        >
-                          <Trophy className="w-4 h-4" />
-                        </button>
-                        {raffle.status === 'active' && (
-                          <button onClick={() => handleEndRaffle(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Encerrar"><X className="w-4 h-4" /></button>
-                        )}
-                        {raffle.status === 'ended' && (
-                          <button onClick={() => handleExtendRaffle(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Estender"><Clock className="w-4 h-4" /></button>
-                        )}
-                        {!isGoalMet(raffle, raffleStats) && (
-                          <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
-                        )}
-                        <button onClick={() => handleFixNumbers(raffle)} className="p-2 text-blue-400 hover:text-blue-600 transition-colors" title="Corrigir Números"><RefreshCw className="w-4 h-4" /></button>
-                        <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    </td>
+                    </div>
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 uppercase tracking-wider",
+                      raffle.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                    )}>
+                      {raffle.active ? 'Ativa' : 'Inativa'}
+                    </span>
+                  </div>
+
+                  {/* Grid de Métricas da Rifa no Mobile */}
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Vendas</p>
+                      <p className="text-xs font-black text-slate-900 mt-0.5">{raffleStats.soldNumbers}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Arrecadado</p>
+                      <p className="text-xs font-black text-primary mt-0.5">R$ {raffleStats.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Clientes</p>
+                      <p className="text-xs font-black text-slate-700 mt-0.5">{raffleStats.uniqueCustomers}</p>
+                    </div>
+                  </div>
+
+                  {/* Barra de Ações Rápidas no Mobile */}
+                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-100">
+                    <button 
+                      onClick={() => handleEdit(raffle)} 
+                      className="p-2.5 text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-center" 
+                      title="Editar"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDraw(raffle)} 
+                      className={cn(
+                        "p-2.5 rounded-xl transition-colors flex items-center justify-center",
+                        isGoalMet(raffle, raffleStats) ? "text-secondary hover:text-emerald-600 hover:bg-emerald-50" : "text-slate-300 cursor-not-allowed"
+                      )}
+                      title={isGoalMet(raffle, raffleStats) ? "Sortear" : "Meta não atingida"}
+                    >
+                      <Trophy className="w-4 h-4" />
+                    </button>
+                    {raffle.status === 'active' && (
+                      <button 
+                        onClick={() => handleEndRaffle(raffle)} 
+                        className="p-2.5 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors flex items-center justify-center" 
+                        title="Encerrar"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                    {raffle.status === 'ended' && (
+                      <button 
+                        onClick={() => handleExtendRaffle(raffle)} 
+                        className="p-2.5 text-slate-600 hover:text-primary hover:bg-blue-50 rounded-xl transition-colors flex items-center justify-center" 
+                        title="Estender"
+                      >
+                        <Clock className="w-4 h-4" />
+                      </button>
+                    )}
+                    {!isGoalMet(raffle, raffleStats) && (
+                      <button 
+                        onClick={() => handleToggleManualRelease(raffle)} 
+                        className="p-2.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-colors flex items-center justify-center" 
+                        title="Liberar Manualmente"
+                      >
+                        <Unlock className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => handleFixNumbers(raffle)} 
+                      className="p-2.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors flex items-center justify-center" 
+                      title="Corrigir Números"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(raffle)} 
+                      className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors flex items-center justify-center" 
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Tabela Desktop com Scroll Horizontal Interno Garantido */}
+          <div className="hidden lg:block card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Rifa</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Vendas</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Arrecadação</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Clientes</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {raffles.map(raffle => {
+                    const raffleStats = getRaffleStats(raffle.id);
+                    return (
+                      <tr key={raffle.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <img 
+                              src={raffle.image_url || `https://picsum.photos/seed/${raffle.id}/50/50`} 
+                              className="w-10 h-10 rounded-lg object-cover" 
+                              referrerPolicy="no-referrer"
+                              alt={raffle.name}
+                            />
+                            <div>
+                              <p className="font-bold text-slate-900">{raffle.name}</p>
+                              <p className="text-xs text-slate-500">{raffle.total_numbers} números</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-900">{raffleStats.soldNumbers}</span>
+                            <span className="text-[10px] text-slate-400 uppercase">Números vendidos</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-primary">R$ {raffleStats.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            <span className="text-[10px] text-slate-400 uppercase">Total arrecadado</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-700">{raffleStats.uniqueCustomers}</span>
+                            <span className="text-[10px] text-slate-400 uppercase">Clientes únicos</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={cn(
+                            "px-2 py-1 rounded-full text-xs font-bold",
+                            raffle.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                          )}>
+                            {raffle.active ? 'Ativa' : 'Inativa'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <button onClick={() => handleEdit(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Editar"><Settings className="w-4 h-4" /></button>
+                            <button 
+                              onClick={() => handleDraw(raffle)} 
+                              className={cn(
+                                "p-2 transition-colors",
+                                isGoalMet(raffle, raffleStats) ? "text-secondary hover:text-emerald-600" : "text-slate-300 cursor-not-allowed"
+                              )}
+                              title={isGoalMet(raffle, raffleStats) ? "Sortear" : "Meta não atingida"}
+                            >
+                              <Trophy className="w-4 h-4" />
+                            </button>
+                            {raffle.status === 'active' && (
+                              <button onClick={() => handleEndRaffle(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Encerrar"><X className="w-4 h-4" /></button>
+                            )}
+                            {raffle.status === 'ended' && (
+                              <button onClick={() => handleExtendRaffle(raffle)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Estender"><Clock className="w-4 h-4" /></button>
+                            )}
+                            {!isGoalMet(raffle, raffleStats) && (
+                              <button onClick={() => handleToggleManualRelease(raffle)} className="p-2 text-amber-400 hover:text-amber-600 transition-colors" title="Liberar Manualmente"><Unlock className="w-4 h-4" /></button>
+                            )}
+                            <button onClick={() => handleFixNumbers(raffle)} className="p-2 text-blue-400 hover:text-blue-600 transition-colors" title="Corrigir Números"><RefreshCw className="w-4 h-4" /></button>
+                            <button onClick={() => handleDelete(raffle)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       ) : activeTab === 'customers' ? (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 border-b border-slate-100">
-                <tr>
-                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Cliente</th>
-                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">WhatsApp</th>
-                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">CPF</th>
-                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Total Gasto</th>
-                  <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Números</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {Array.from(new Set(compras.map(c => c.telefone))).map(tel => {
-                  const clientPurchases = compras.filter(c => c.telefone === tel);
-                  const name = clientPurchases[0]?.nome || "Sem nome";
-                  const cpf = clientPurchases[0]?.cpf || "Sem CPF";
-                  const totalSpent = clientPurchases.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
-                  const totalNumbers = clientPurchases.reduce((acc, curr) => acc + (Array.isArray(curr.numero) ? curr.numero.length : 0), 0);
+        <div className="space-y-4">
+          {/* Visualização de Clientes em Cards para Telas Pequenas */}
+          <div className="sm:hidden space-y-3">
+            {Array.from(new Set(compras.map(c => c.telefone))).map(tel => {
+              const clientPurchases = compras.filter(c => c.telefone === tel);
+              const name = clientPurchases[0]?.nome || "Sem nome";
+              const cpf = clientPurchases[0]?.cpf || "Sem CPF";
+              const totalSpent = clientPurchases.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+              const totalNumbers = clientPurchases.reduce((acc, curr) => acc + (Array.isArray(curr.numero) ? curr.numero.length : 0), 0);
 
-                  return (
-                    <tr key={tel} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center font-bold">
-                            {name.charAt(0)}
+              return (
+                <div key={tel} className="card p-4 space-y-3 border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 bg-primary/10 text-primary rounded-xl flex items-center justify-center font-bold text-sm">
+                        {name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-900 text-sm">{name}</p>
+                        <p className="text-xs text-slate-500">{tel}</p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-black">
+                      {totalNumbers} n°
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500">CPF: {cpf}</span>
+                    <span className="font-black text-emerald-600">
+                      R$ {totalSpent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Tabela de Clientes Desktop com Scroll Horizontal Interno */}
+          <div className="hidden sm:block card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[550px]">
+                <thead className="bg-slate-50 border-b border-slate-100">
+                  <tr>
+                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Cliente</th>
+                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">WhatsApp</th>
+                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">CPF</th>
+                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Total Gasto</th>
+                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Números</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {Array.from(new Set(compras.map(c => c.telefone))).map(tel => {
+                    const clientPurchases = compras.filter(c => c.telefone === tel);
+                    const name = clientPurchases[0]?.nome || "Sem nome";
+                    const cpf = clientPurchases[0]?.cpf || "Sem CPF";
+                    const totalSpent = clientPurchases.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+                    const totalNumbers = clientPurchases.reduce((acc, curr) => acc + (Array.isArray(curr.numero) ? curr.numero.length : 0), 0);
+
+                    return (
+                      <tr key={tel} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center font-bold">
+                              {name.charAt(0)}
+                            </div>
+                            <span className="font-bold text-slate-900">{name}</span>
                           </div>
-                          <span className="font-bold text-slate-900">{name}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-slate-600 font-medium">{tel}</td>
-                      <td className="px-6 py-4 text-slate-600 font-medium">{cpf}</td>
-                      <td className="px-6 py-4">
-                        <span className="font-black text-emerald-600">
-                          R$ {totalSpent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-black">
-                          {totalNumbers} números
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="px-6 py-4 text-slate-600 font-medium">{tel}</td>
+                        <td className="px-6 py-4 text-slate-600 font-medium">{cpf}</td>
+                        <td className="px-6 py-4">
+                          <span className="font-black text-emerald-600">
+                            R$ {totalSpent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-black">
+                            {totalNumbers} números
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       ) : activeTab === 'grupo_pix' ? (
@@ -2856,7 +3023,7 @@ const AdminDashboard = () => {
       {/* Create Modal */}
       <AnimatePresence>
         {showCreate && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2868,90 +3035,90 @@ const AdminDashboard = () => {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col my-auto"
             >
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h2 className="text-xl font-bold text-slate-900">{editingId ? 'Editar Rifa' : 'Criar Nova Rifa'}</h2>
-                <button onClick={() => { setShowCreate(false); setEditingId(null); }} className="text-slate-400 hover:text-slate-600"><X /></button>
+              <div className="p-4 sm:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900">{editingId ? 'Editar Rifa' : 'Criar Nova Rifa'}</h2>
+                <button onClick={() => { setShowCreate(false); setEditingId(null); }} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"><X className="w-5 h-5" /></button>
               </div>
-              <form onSubmit={handleCreate} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <form onSubmit={handleCreate} className="p-4 sm:p-6 space-y-5 sm:space-y-6 overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Rifa</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Nome da Rifa</label>
                     <input 
                       type="text" 
                       required
                       value={newRaffle.name}
                       onChange={e => setNewRaffle({...newRaffle, name: e.target.value})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                       placeholder="Ex: Rifa Alice - iPhone 15 Pro"
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Descrição</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Descrição</label>
                     <textarea 
                       required
                       value={newRaffle.description}
                       onChange={e => setNewRaffle({...newRaffle, description: e.target.value})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary h-24 resize-none"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary h-24 resize-none text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Valor por Número (R$)</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Valor por Número (R$)</label>
                     <input 
                       type="number" 
                       step="0.01"
                       required
                       value={newRaffle.price}
                       onChange={e => setNewRaffle({...newRaffle, price: parseFloat(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Tipo de Rifa</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Tipo de Rifa</label>
                     <select 
                       value={newRaffle.type}
                       onChange={e => setNewRaffle({...newRaffle, type: e.target.value})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                     >
                       <option value="manual">Manual (Usuário escolhe)</option>
                       <option value="automatic">Automática (Sistema gera)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Quantidade de Números</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Quantidade de Números</label>
                     <input 
                       type="number" 
                       required
                       disabled={!!editingId}
                       value={newRaffle.total_numbers}
                       onChange={e => setNewRaffle({...newRaffle, total_numbers: parseInt(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 text-sm"
                     />
                   </div>
-                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                     <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Data de Início</label>
+                      <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Data de Início</label>
                       <input 
                         type="date" 
                         required
                         value={newRaffle.start_date}
                         onChange={e => setNewRaffle({...newRaffle, start_date: e.target.value})}
-                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Data de Encerramento</label>
+                      <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Data de Encerramento</label>
                       <input 
                         type="date" 
                         required={!newRaffle.indeterminate_date}
                         disabled={newRaffle.indeterminate_date}
                         value={newRaffle.end_date}
                         onChange={e => setNewRaffle({...newRaffle, end_date: e.target.value})}
-                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 text-sm"
                       />
                     </div>
-                    <div className="flex items-end pb-2">
+                    <div className="flex items-end pb-2 sm:col-span-2 md:col-span-1">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input 
                           type="checkbox"
@@ -2959,57 +3126,57 @@ const AdminDashboard = () => {
                           onChange={e => setNewRaffle({...newRaffle, indeterminate_date: e.target.checked, end_date: e.target.checked ? '' : newRaffle.end_date})}
                           className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                         />
-                        <span className="text-sm font-bold text-slate-700 uppercase">Data Indeterminada</span>
+                        <span className="text-xs sm:text-sm font-bold text-slate-700 uppercase">Data Indeterminada</span>
                       </label>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">URL da Imagem</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">URL da Imagem</label>
                     <input 
                       type="url" 
                       value={newRaffle.image_url}
                       onChange={e => setNewRaffle({...newRaffle, image_url: e.target.value})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                       placeholder="https://..."
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Compra Mínima (Números)</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Compra Mínima (Números)</label>
                     <input 
                       type="number" 
                       min="1"
                       required
                       value={newRaffle.min_purchase_quantity}
                       onChange={e => setNewRaffle({...newRaffle, min_purchase_quantity: parseInt(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Meta de Arrecadação (R$)</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Meta de Arrecadação (R$)</label>
                     <input 
                       type="number" 
                       step="0.01"
                       value={newRaffle.min_revenue_goal}
                       onChange={e => setNewRaffle({...newRaffle, min_revenue_goal: parseFloat(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                       placeholder="0.00"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Meta de Vendas (%)</label>
+                    <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-1">Meta de Vendas (%)</label>
                     <input 
                       type="number" 
                       min="0" max="100"
                       value={newRaffle.min_sales_percent}
                       onChange={e => setNewRaffle({...newRaffle, min_sales_percent: parseInt(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
                       placeholder="0"
                     />
                   </div>
 
-                  <div className="md:col-span-2 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6">
+                  <div className="md:col-span-2 p-4 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-3xl border border-slate-100 space-y-4 sm:space-y-6">
                     <div className="flex justify-between items-center">
-                      <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                      <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                         <Package className="w-4 h-4 text-primary" />
                         Pacotes de Compra (Opcional)
                       </h3>
@@ -3026,9 +3193,9 @@ const AdminDashboard = () => {
                       </button>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                       {newRaffle.packages.map((pkg, idx) => (
-                        <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-white rounded-2xl border border-slate-200 relative group">
+                        <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 sm:gap-4 p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 relative group">
                           <div className="md:col-span-3">
                             <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Qtd Números</label>
                             <input 
@@ -3040,7 +3207,7 @@ const AdminDashboard = () => {
                                 newPackages[idx].quantity = parseInt(e.target.value);
                                 setNewRaffle({...newRaffle, packages: newPackages});
                               }}
-                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                             />
                           </div>
                           <div className="md:col-span-3">
@@ -3054,10 +3221,10 @@ const AdminDashboard = () => {
                                 newPackages[idx].price = parseFloat(e.target.value);
                                 setNewRaffle({...newRaffle, packages: newPackages});
                               }}
-                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                             />
                           </div>
-                          <div className="md:col-span-3 flex items-center gap-4 pt-4">
+                          <div className="md:col-span-4 flex items-center gap-4 pt-1 sm:pt-4">
                             <label className="flex items-center gap-2 cursor-pointer">
                               <input 
                                 type="checkbox"
@@ -3089,14 +3256,15 @@ const AdminDashboard = () => {
                               <span className="text-[10px] font-bold text-slate-500 uppercase">Ativo</span>
                             </label>
                           </div>
-                          <div className="md:col-span-3 flex items-end justify-end pb-2">
+                          <div className="md:col-span-2 flex items-center justify-end">
                             <button 
                               type="button"
                               onClick={() => {
                                 const newPackages = newRaffle.packages.filter((_, i) => i !== idx);
                                 setNewRaffle({...newRaffle, packages: newPackages});
                               }}
-                              className="text-slate-300 hover:text-red-500 transition-colors"
+                              className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                              title="Remover pacote"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -3104,14 +3272,14 @@ const AdminDashboard = () => {
                         </div>
                       ))}
                       {newRaffle.packages.length === 0 && (
-                        <p className="text-sm text-slate-400 italic text-center py-4">Nenhum pacote adicionado ainda.</p>
+                        <p className="text-xs sm:text-sm text-slate-400 italic text-center py-4">Nenhum pacote adicionado ainda.</p>
                       )}
                     </div>
                   </div>
 
-                  <div className="md:col-span-2 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6">
+                  <div className="md:col-span-2 p-4 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-3xl border border-slate-100 space-y-4 sm:space-y-6">
                     <div className="flex justify-between items-center">
-                      <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                      <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
                         <Trophy className="w-4 h-4 text-primary" />
                         Premiação
                       </h3>
@@ -3128,9 +3296,9 @@ const AdminDashboard = () => {
                       </button>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                       {newRaffle.prizes.map((prize, idx) => (
-                        <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-white rounded-2xl border border-slate-200 relative group">
+                        <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 sm:gap-4 p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 relative group">
                           <div className="md:col-span-2">
                             <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Posição</label>
                             <input 
@@ -3141,7 +3309,7 @@ const AdminDashboard = () => {
                                 newPrizes[idx].position = parseInt(e.target.value);
                                 setNewRaffle({...newRaffle, prizes: newPrizes});
                               }}
-                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                             />
                           </div>
                           <div className="md:col-span-4">
@@ -3155,7 +3323,7 @@ const AdminDashboard = () => {
                                 setNewRaffle({...newRaffle, prizes: newPrizes});
                               }}
                               placeholder="Ex: iPhone 15 Pro"
-                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                             />
                           </div>
                           <div className="md:col-span-5">
@@ -3169,17 +3337,18 @@ const AdminDashboard = () => {
                                 setNewRaffle({...newRaffle, prizes: newPrizes});
                               }}
                               placeholder="Ex: Cor Titânio Natural"
-                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                             />
                           </div>
-                          <div className="md:col-span-1 flex items-end justify-center pb-2">
+                          <div className="md:col-span-1 flex items-center justify-end">
                             <button 
                               type="button"
                               onClick={() => {
                                 const newPrizes = newRaffle.prizes.filter((_, i) => i !== idx);
                                 setNewRaffle({...newRaffle, prizes: newPrizes});
                               }}
-                              className="text-slate-300 hover:text-red-500 transition-colors"
+                              className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                              title="Remover prêmio"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -3187,7 +3356,7 @@ const AdminDashboard = () => {
                         </div>
                       ))}
                       {newRaffle.prizes.length === 0 && (
-                        <p className="text-sm text-slate-400 italic text-center py-4">Nenhum prêmio adicionado ainda.</p>
+                        <p className="text-xs sm:text-sm text-slate-400 italic text-center py-4">Nenhum prêmio adicionado ainda.</p>
                       )}
                     </div>
                   </div>
@@ -3301,7 +3470,7 @@ const AdminDashboard = () => {
                         <div className="space-y-2">
                           <label className="block text-xs font-bold text-amber-700 uppercase">Prêmios da Roleta</label>
                           {newRaffle.roulette.prizes.map((prize: any, idx: number) => (
-                            <div key={idx} className="grid grid-cols-3 gap-2 bg-white p-2 rounded-lg border border-amber-100">
+                            <div key={idx} className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-white p-2.5 rounded-xl border border-amber-100">
                               <select 
                                 value={prize.type}
                                 onChange={e => {
@@ -3309,7 +3478,7 @@ const AdminDashboard = () => {
                                   newPrizes[idx].type = e.target.value;
                                   setNewRaffle({...newRaffle, roulette: {...newRaffle.roulette, prizes: newPrizes}});
                                 }}
-                                className="text-xs border-none focus:ring-0"
+                                className="text-xs border border-slate-200 rounded-lg p-2 focus:ring-0"
                               >
                                 <option value="numeros">Números</option>
                                 <option value="pix">PIX (R$)</option>
@@ -3322,7 +3491,7 @@ const AdminDashboard = () => {
                                   newPrizes[idx].value = parseFloat(e.target.value);
                                   setNewRaffle({...newRaffle, roulette: {...newRaffle.roulette, prizes: newPrizes}});
                                 }}
-                                className="text-xs border-none focus:ring-0"
+                                className="text-xs border border-slate-200 rounded-lg p-2 focus:ring-0"
                                 placeholder="Valor"
                               />
                               <input 
@@ -3333,7 +3502,7 @@ const AdminDashboard = () => {
                                   newPrizes[idx].chance = parseFloat(e.target.value);
                                   setNewRaffle({...newRaffle, roulette: {...newRaffle.roulette, prizes: newPrizes}});
                                 }}
-                                className="text-xs border-none focus:ring-0"
+                                className="text-xs border border-slate-200 rounded-lg p-2 focus:ring-0"
                                 placeholder="Chance %"
                               />
                             </div>
@@ -3343,9 +3512,9 @@ const AdminDashboard = () => {
                     )}
                   </div>
                 </div>
-                <div className="pt-6 border-t border-slate-100 flex gap-4">
-                  <button type="button" onClick={() => { setShowCreate(false); setEditingId(null); }} className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-colors">Cancelar</button>
-                  <button type="submit" disabled={creating} className="flex-1 btn-primary py-3 disabled:opacity-50">
+                <div className="pt-4 sm:pt-6 border-t border-slate-100 flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-4 shrink-0 bg-white">
+                  <button type="button" onClick={() => { setShowCreate(false); setEditingId(null); }} className="w-full sm:flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-colors text-center">Cancelar</button>
+                  <button type="submit" disabled={creating} className="w-full sm:flex-1 btn-primary py-3 disabled:opacity-50 text-center">
                     {creating ? 'Salvando...' : (editingId ? 'Salvar Alterações' : 'Criar Rifa')}
                   </button>
                 </div>

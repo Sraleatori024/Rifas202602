@@ -397,20 +397,20 @@ export const GrupoPixAdmin: React.FC = () => {
             <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
             Módulo Exclusivo — Grupo Pix
           </div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Users className="w-7 h-7 text-emerald-600" />
-            Gestão Integrada do Grupo Pix
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <Users className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-600 shrink-0" />
+            <span>Gestão Integrada do Grupo Pix</span>
           </h2>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
             Gerenciamento independente de grupos, participantes, arrecadação real e sorteios auditados.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           {selectedGroup && (
             <button
               onClick={() => setSelectedGroup(null)}
-              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5"
+              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
             >
               <ArrowLeft className="w-4 h-4" />
               Ver Todos os Grupos
@@ -419,7 +419,7 @@ export const GrupoPixAdmin: React.FC = () => {
 
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2"
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Novo Grupo Pix
@@ -429,7 +429,7 @@ export const GrupoPixAdmin: React.FC = () => {
 
       {/* Sub-Navigation Tabs */}
       {!selectedGroup && (
-        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+        <div className="w-full max-w-full flex overflow-x-auto no-scrollbar sm:flex-wrap gap-1.5 sm:gap-2 border-b border-slate-200 pb-3">
           {[
             { id: 'grupos', label: 'Grupos', icon: Users, badge: groups.length },
             { id: 'participantes', label: 'Participantes', icon: ShieldCheck, badge: overallStats.totalValidParts },
@@ -443,7 +443,7 @@ export const GrupoPixAdmin: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setSubTab(tab.id as any)}
-                className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+                className={`px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 shrink-0 whitespace-nowrap ${
                   isActive
                     ? 'bg-slate-900 text-white shadow-sm'
                     : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -470,7 +470,7 @@ export const GrupoPixAdmin: React.FC = () => {
       {selectedGroup && groupStats && (
         <div className="space-y-6">
           {/* Header do Grupo */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-4 sm:p-6 md:p-8 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-6">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -490,24 +490,24 @@ export const GrupoPixAdmin: React.FC = () => {
                   </span>
                 </div>
 
-                <h2 className="text-2xl font-black text-slate-900">
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 break-words">
                   {selectedGroup.name || (selectedGroup as any).title}
                 </h2>
-                <p className="text-xs text-slate-500 font-medium max-w-2xl">
+                <p className="text-xs text-slate-500 font-medium max-w-2xl break-words">
                   {selectedGroup.description || 'Grupo Pix para arrecadação com liberação automática de acesso.'}
                 </p>
               </div>
 
               {/* Botões de Ação do Grupo */}
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto">
                 {/* BOTÃO TESTAR SORTEIO */}
                 <button
                   id="btn-testar-sorteio-header"
                   onClick={() => handleOpenTestDraw(selectedGroup)}
-                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/40 font-black text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/40 font-black text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
                   title="Testar experiência visual com participantes fictícios"
                 >
-                  <Clapperboard className="w-4 h-4 text-cyan-400" />
+                  <Clapperboard className="w-4 h-4 text-cyan-400 shrink-0" />
                   <span>🎬 TESTAR SORTEIO</span>
                 </button>
 
@@ -517,19 +517,20 @@ export const GrupoPixAdmin: React.FC = () => {
                     id="btn-iniciar-sorteio-grupo"
                     onClick={() => handleOpenOfficialConfirm(selectedGroup)}
                     disabled={groupStats.participacoesValidas === 0}
-                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
-                    <Trophy className="w-4 h-4 text-slate-950" />
+                    <Trophy className="w-4 h-4 text-slate-950 shrink-0" />
                     <span>🏆 SORTEIO OFICIAL</span>
                   </button>
                 )}
 
                 <button
                   onClick={() => handleDeleteGroup(selectedGroup.id)}
-                  className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-slate-200"
+                  className="w-full sm:w-auto p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-slate-200 flex items-center justify-center"
                   title="Excluir Grupo"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-4 h-4 shrink-0" />
+                  <span className="sm:hidden font-bold text-xs ml-1.5 text-red-500">Excluir Grupo</span>
                 </button>
               </div>
             </div>
@@ -635,12 +636,12 @@ export const GrupoPixAdmin: React.FC = () => {
               </div>
 
               {/* Ações de Sorteio com Dois Botões Distintos */}
-              <div className="flex flex-wrap items-center gap-3 pt-1">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
                 {/* [ 🎬 TESTAR SORTEIO ] */}
                 <button
                   id="btn-testar-sorteio-painel"
                   onClick={() => handleOpenTestDraw(selectedGroup)}
-                  className="flex-1 min-w-[200px] px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 hover:border-cyan-400 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+                  className="w-full sm:flex-1 px-5 sm:px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 hover:border-cyan-400 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2.5 cursor-pointer"
                 >
                   <Clapperboard className="w-4 h-4 text-cyan-400" />
                   <span>🎬 TESTAR SORTEIO</span>
@@ -652,13 +653,13 @@ export const GrupoPixAdmin: React.FC = () => {
                     id="btn-sorteio-oficial-painel"
                     onClick={() => handleOpenOfficialConfirm(selectedGroup)}
                     disabled={groupStats.participacoesValidas === 0}
-                    className="flex-1 min-w-[220px] px-6 py-3.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-amber-500/25 transition-all flex items-center justify-center gap-2.5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    className="w-full sm:flex-1 px-5 sm:px-6 py-3.5 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-amber-500/25 transition-all flex items-center justify-center gap-2.5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     <Trophy className="w-4 h-4 text-slate-950" />
                     <span>🏆 SORTEIO OFICIAL</span>
                   </button>
                 ) : (
-                  <div className="flex-1 min-w-[220px] px-6 py-3.5 bg-slate-800/50 border border-slate-700/60 text-slate-400 font-bold text-xs rounded-2xl text-center flex items-center justify-center gap-2">
+                  <div className="w-full sm:flex-1 px-5 sm:px-6 py-3.5 bg-slate-800/50 border border-slate-700/60 text-slate-400 font-bold text-xs rounded-2xl text-center flex items-center justify-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-purple-400" />
                     <span>Sorteio Oficial Já Realizado</span>
                   </div>
@@ -811,7 +812,68 @@ export const GrupoPixAdmin: React.FC = () => {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Visualização Mobile: Cards */}
+            <div className="divide-y divide-slate-100 lg:hidden font-medium text-slate-700">
+              {groupStats.validParts.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">
+                  Nenhuma participação confirmada neste grupo ainda.
+                </div>
+              ) : (
+                groupStats.validParts
+                  .filter((p: any) => {
+                    if (!searchTerm.trim()) return true;
+                    const s = searchTerm.toLowerCase();
+                    const code = (p.participationCode || p.code || '').toLowerCase();
+                    const name = (p.buyer_name || p.userName || '').toLowerCase();
+                    const cpf = (p.buyer_cpf || p.userCpf || '').toLowerCase();
+                    const phone = (p.buyer_phone || p.userPhone || '').toLowerCase();
+                    return code.includes(s) || name.includes(s) || cpf.includes(s) || phone.includes(s);
+                  })
+                  .map((p: any) => {
+                    const code = p.participationCode || p.participation_code || p.code || 'GP-????';
+                    const name = p.buyer_name || p.userName || '—';
+                    const phone = p.buyer_phone || p.userPhone || '—';
+                    const cpf = p.buyer_cpf || p.userCpf || '—';
+                    const isValid = p.status === 'valid' || p.status === 'active';
+
+                    return (
+                      <div key={p.id} className="p-4 space-y-2.5 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-black text-emerald-700 text-sm select-all bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200/60">
+                            {code}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                              isValid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {isValid ? 'Válida' : p.status}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-50 border border-emerald-200 text-emerald-700">
+                              Pago
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="font-bold text-slate-900 text-sm">{name}</p>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 font-mono mt-0.5">
+                            <span>Tel: {phone}</span>
+                            <span>CPF: {cpf}</span>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 font-mono flex items-center justify-between pt-1 border-t border-slate-100">
+                          <span>Data:</span>
+                          <span>{formatDate(p.paidAt || p.confirmed_at || p.created_at)}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+            {/* Visualização Desktop: Tabela */}
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200 text-[10px]">
@@ -1032,7 +1094,68 @@ export const GrupoPixAdmin: React.FC = () => {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Visualização Mobile: Cards de Participantes */}
+              <div className="divide-y divide-slate-100 lg:hidden font-medium text-slate-700">
+                {participations.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-xs">
+                    Nenhum participante confirmado encontrado.
+                  </div>
+                ) : (
+                  participations
+                    .filter((p: any) => {
+                      if (!searchTerm.trim()) return true;
+                      const s = searchTerm.toLowerCase();
+                      const code = (p.participationCode || p.code || '').toLowerCase();
+                      const name = (p.buyer_name || p.userName || '').toLowerCase();
+                      const cpf = (p.buyer_cpf || p.userCpf || '').toLowerCase();
+                      const phone = (p.buyer_phone || p.userPhone || '').toLowerCase();
+                      const group = (p.group_name || '').toLowerCase();
+                      return code.includes(s) || name.includes(s) || cpf.includes(s) || phone.includes(s) || group.includes(s);
+                    })
+                    .map((p: any) => {
+                      const code = p.participationCode || p.participation_code || p.code || 'GP-????';
+                      const name = p.buyer_name || p.userName || '—';
+                      const phone = p.buyer_phone || p.userPhone || '—';
+                      const cpf = p.buyer_cpf || p.userCpf || '—';
+                      const groupName = p.group_name || groups.find(g => g.id === (p.groupId || p.group_id))?.name || 'Grupo Pix';
+                      const isValid = p.status === 'valid' || p.status === 'active';
+
+                      return (
+                        <div key={p.id} className="p-4 space-y-2.5 hover:bg-slate-50 transition-colors">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono font-black text-emerald-700 text-sm select-all bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200/60">
+                              {code}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                              isValid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {isValid ? 'Válida' : p.status}
+                            </span>
+                          </div>
+
+                          <div>
+                            <p className="font-bold text-slate-900 text-sm">{name}</p>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 font-mono mt-0.5">
+                              <span>Tel: {phone}</span>
+                              <span>CPF: {cpf}</span>
+                            </div>
+                            <p className="text-xs text-slate-600 font-semibold mt-1">
+                              Grupo: <span className="text-slate-900">{groupName}</span>
+                            </p>
+                          </div>
+
+                          <div className="text-[11px] text-slate-400 font-mono flex items-center justify-between pt-1 border-t border-slate-100">
+                            <span>Data de confirmação:</span>
+                            <span>{formatDate(p.paidAt || p.confirmed_at || p.created_at)}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+
+              {/* Visualização Desktop: Tabela de Participantes */}
+              <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200 text-[10px]">
@@ -1115,7 +1238,59 @@ export const GrupoPixAdmin: React.FC = () => {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Visualização Mobile: Cards de Pagamentos */}
+              <div className="divide-y divide-slate-100 lg:hidden font-medium text-slate-700">
+                {compras.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-xs">
+                    Nenhum pagamento registrado ainda.
+                  </div>
+                ) : (
+                  compras.map((c: any) => {
+                    const isPaid = c.status === 'paid' || c.status === 'pago' || c.status === 'approved';
+                    const isCancelled = c.status === 'cancelled' || c.status === 'cancelado' || c.status === 'expired' || c.status === 'payment_creation_failed';
+                    const groupName = groups.find(g => g.id === (c.groupId || c.group_id))?.name || 'Grupo Pix';
+
+                    return (
+                      <div key={c.id} className="p-4 space-y-2.5 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs text-slate-400 truncate max-w-[140px]">
+                            {c.id}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                            isPaid ? 'bg-emerald-100 text-emerald-800' : isCancelled ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {isPaid ? 'Confirmado' : isCancelled ? 'Cancelado' : 'Pendente'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-bold text-slate-900 text-sm">{c.nome || c.client?.name || '—'}</p>
+                            <p className="font-mono text-xs text-slate-500">{c.telefone || c.client?.phone || '—'}</p>
+                            <p className="text-xs text-slate-600 font-semibold mt-1">
+                              Grupo: <span className="text-slate-900">{groupName}</span>
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-xs text-slate-400 block font-normal">Valor</span>
+                            <span className="font-black text-slate-900 text-sm">
+                              R$ {Number(c.valor || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 font-mono flex items-center justify-between pt-1 border-t border-slate-100">
+                          <span>Criado em:</span>
+                          <span>{formatDate(c.created_at)}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Visualização Desktop: Tabela de Pagamentos */}
+              <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200 text-[10px]">
@@ -1209,7 +1384,58 @@ export const GrupoPixAdmin: React.FC = () => {
                 <div className="p-5 border-b border-slate-100">
                   <h3 className="text-base font-black text-slate-900">Arrecadação Detalhada por Grupo</h3>
                 </div>
-                <div className="overflow-x-auto">
+
+                {/* Visualização Mobile: Cards de Arrecadação */}
+                <div className="divide-y divide-slate-100 lg:hidden font-medium text-slate-700">
+                  {groups.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      Nenhum grupo encontrado.
+                    </div>
+                  ) : (
+                    groups.map((g) => {
+                      const parts = participations.filter(p => (p.groupId === g.id || p.group_id === g.id) && (p.status === 'valid' || p.status === 'active'));
+                      const paid = compras.filter(c => (c.groupId === g.id || c.group_id === g.id) && (c.status === 'paid' || c.status === 'pago' || c.status === 'approved'));
+                      const rev = paid.reduce((acc, c) => acc + Number(c.valor || 0), 0) || parts.reduce((acc, p) => acc + Number(p.amount || g.participation_price || 0), 0);
+
+                      return (
+                        <div key={g.id} className="p-4 space-y-3 hover:bg-slate-50 transition-colors">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <h4 className="font-bold text-slate-900 text-sm">{g.name || (g as any).title}</h4>
+                              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                                Entrada: <span className="font-bold text-slate-900">R$ {Number(g.participation_price || (g as any).entryFee || 0).toFixed(2)}</span>
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => setSelectedGroup(g)}
+                              className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold shrink-0 transition-all"
+                            >
+                              Ver Grupo
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center text-xs">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Bilhetes</span>
+                              <span className="font-black text-emerald-700 text-sm">{parts.length}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Pagos</span>
+                              <span className="font-bold text-slate-900 text-sm">{Math.max(paid.length, parts.length)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase">Total</span>
+                              <span className="font-black text-slate-900 text-sm">R$ {rev.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Visualização Desktop: Tabela de Arrecadação */}
+                <div className="hidden lg:block overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200 text-[10px]">
@@ -1264,7 +1490,45 @@ export const GrupoPixAdmin: React.FC = () => {
                 </p>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Visualização Mobile: Cards de Sorteios */}
+              <div className="divide-y divide-slate-100 lg:hidden font-medium text-slate-700">
+                {draws.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-xs">
+                    Nenhum sorteio foi realizado ainda.
+                  </div>
+                ) : (
+                  draws.map((d: any) => (
+                    <div key={d.id} className="p-4 space-y-2.5 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-slate-900 text-xs truncate">
+                          {d.groupName || d.group_name || 'Grupo Pix'}
+                        </span>
+                        <span className="text-purple-700 font-mono font-black text-xs bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200/60 select-all">
+                          {d.winnerParticipationCode}
+                        </span>
+                      </div>
+
+                      <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100/70 space-y-1">
+                        <p className="font-black text-purple-900 text-sm flex items-center gap-1.5">
+                          <Trophy className="w-4 h-4 text-purple-600 shrink-0" />
+                          <span>Ganhador: {d.winnerName}</span>
+                        </p>
+                        <p className="text-xs font-mono text-slate-600 pl-5">
+                          Telefone: {d.winner_phone_masked || d.winnerPhone || '—'}
+                        </p>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 font-mono flex items-center justify-between pt-1 border-t border-slate-100">
+                        <span>Concorrentes: {d.total_eligible_participations || d.totalEligible || '—'}</span>
+                        <span>{formatDate(d.drawn_at)}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Visualização Desktop: Tabela de Sorteios */}
+              <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200 text-[10px]">
@@ -1316,8 +1580,8 @@ export const GrupoPixAdmin: React.FC = () => {
 
       {/* Modal: Criar Grupo Pix */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-6">
             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <h3 className="text-lg font-black text-slate-900">Novo Grupo Pix VIP</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
@@ -1504,12 +1768,12 @@ export const GrupoPixAdmin: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2.5 sm:gap-3 pt-2">
               <button
                 id="btn-cancelar-sorteio-oficial"
                 type="button"
                 onClick={() => setShowOfficialConfirmModal(null)}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold text-xs transition-all cursor-pointer"
+                className="w-full sm:w-auto px-5 py-3 sm:py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold text-xs transition-all cursor-pointer text-center"
               >
                 CANCELAR
               </button>
@@ -1523,7 +1787,7 @@ export const GrupoPixAdmin: React.FC = () => {
                   setIsTestDrawMode(false);
                   setExecutingDrawGroup(targetGroup);
                 }}
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-6 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Trophy className="w-4 h-4 text-slate-950" />
                 REALIZAR SORTEIO

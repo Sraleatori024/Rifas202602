@@ -595,26 +595,26 @@ export const GrupoPixDrawExperience: React.FC<GrupoPixDrawExperienceProps> = ({
         initial={{ opacity: 0, scale: 0.94, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94 }}
-        className="relative w-full max-w-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-slate-800/90 rounded-3xl p-6 sm:p-10 shadow-2xl shadow-black/90 text-white overflow-hidden"
+        className="relative w-full max-w-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-slate-800/90 rounded-3xl p-4 sm:p-8 md:p-10 shadow-2xl shadow-black/90 text-white overflow-hidden my-auto max-h-[92vh] overflow-y-auto"
       >
         {/* Banner Superior Distintivo: TESTE vs OFICIAL */}
         {isTestMode ? (
-          <div className="mb-6 -mt-2 -mx-2 sm:-mx-6 px-4 py-2 bg-gradient-to-r from-cyan-950 via-cyan-900/60 to-slate-900 border-b border-cyan-500/30 rounded-t-2xl flex items-center justify-between text-xs">
+          <div className="mb-6 px-3 sm:px-4 py-2 bg-gradient-to-r from-cyan-950 via-cyan-900/60 to-slate-900 border border-cyan-500/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
             <div className="flex items-center gap-2 text-cyan-300 font-bold">
-              <FlaskConical className="w-4 h-4 text-cyan-400 animate-pulse" />
-              <span>SIMULAÇÃO DE SORTEIO — AMBIENTE DE TESTE</span>
+              <FlaskConical className="w-4 h-4 text-cyan-400 animate-pulse shrink-0" />
+              <span className="text-[11px] sm:text-xs">SIMULAÇÃO DE SORTEIO — TESTE</span>
             </div>
-            <span className="text-[10px] uppercase font-black tracking-wider text-cyan-400/80 bg-cyan-950 px-2 py-0.5 rounded-full border border-cyan-800">
-              NENHUM RESULTADO REAL SERÁ REGISTRADO
+            <span className="text-[9px] sm:text-[10px] uppercase font-black tracking-wider text-cyan-400/80 bg-cyan-950 px-2 py-0.5 rounded-full border border-cyan-800 w-fit">
+              NENHUM RESULTADO REAL REGISTRADO
             </span>
           </div>
         ) : (
-          <div className="mb-6 -mt-2 -mx-2 sm:-mx-6 px-4 py-2 bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-900 border-b border-amber-500/30 rounded-t-2xl flex items-center justify-between text-xs">
+          <div className="mb-6 px-3 sm:px-4 py-2 bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
             <div className="flex items-center gap-2 text-amber-300 font-bold">
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>SORTEIO OFICIAL AUDITADO</span>
+              <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-[11px] sm:text-xs">SORTEIO OFICIAL AUDITADO</span>
             </div>
-            <span className="text-[10px] uppercase font-black tracking-wider text-amber-400/80 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-800">
+            <span className="text-[9px] sm:text-[10px] uppercase font-black tracking-wider text-amber-400/80 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-800 w-fit">
               RESULTADO SERVER-SIDE DEFINITIVO
             </span>
           </div>
@@ -1006,12 +1006,12 @@ export const GrupoPixDrawExperience: React.FC<GrupoPixDrawExperienceProps> = ({
             </div>
 
             {/* Ações de Fechamento ou Repetição */}
-            <div className="pt-2 flex flex-wrap justify-center gap-3">
+            <div className="pt-2 flex flex-col sm:flex-row justify-center gap-2.5 sm:gap-3 w-full max-w-md mx-auto">
               {isTestMode && (
                 <button
                   id="btn-repetir-teste"
                   onClick={handleRepeatTest}
-                  className="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-center"
                 >
                   <RotateCcw className="w-4 h-4" />
                   REPETIR TESTE
@@ -1021,7 +1021,7 @@ export const GrupoPixDrawExperience: React.FC<GrupoPixDrawExperienceProps> = ({
               <button
                 id="btn-concluir-sorteio"
                 onClick={onClose}
-                className="px-8 py-3.5 bg-slate-100 hover:bg-white text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-white/10 cursor-pointer"
+                className="w-full sm:w-auto px-8 py-3.5 bg-slate-100 hover:bg-white text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-white/10 cursor-pointer text-center"
               >
                 {isTestMode ? 'FECHAR SIMULAÇÃO' : 'RESULTADO OFICIAL (CONCLUIR)'}
               </button>
