@@ -24,7 +24,9 @@ import {
   Filter,
   Calendar,
   Clapperboard,
-  FlaskConical
+  FlaskConical,
+  Edit3,
+  Image as ImageIcon
 } from 'lucide-react';
 import { 
   collection, 
@@ -32,6 +34,7 @@ import {
   onSnapshot, 
   doc, 
   setDoc, 
+  updateDoc,
   deleteDoc, 
   where 
 } from 'firebase/firestore';
@@ -62,6 +65,18 @@ export const GrupoPixAdmin: React.FC = () => {
   const [maxParticipations, setMaxParticipations] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit Group Modal States
+  const [editingGroup, setEditingGroup] = useState<PixGroup | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editType, setEditType] = useState<'whatsapp' | 'telegram'>('whatsapp');
+  const [editAccessLink, setEditAccessLink] = useState('');
+  const [editParticipationPrice, setEditParticipationPrice] = useState('10.00');
+  const [editPrize, setEditPrize] = useState('');
+  const [editMaxParticipations, setEditMaxParticipations] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -328,6 +343,62 @@ export const GrupoPixAdmin: React.FC = () => {
     } catch (err: any) {
       console.error("Erro ao remover grupo:", err);
       alert("Erro ao remover grupo.");
+    }
+  };
+
+  // Open Edit Group Modal with populated values
+  const handleOpenEditGroup = (group: PixGroup) => {
+    setEditingGroup(group);
+    setEditName(group.name || (group as any).title || '');
+    setEditDescription(group.description || '');
+    setEditType(group.type === 'telegram' ? 'telegram' : 'whatsapp');
+    setEditAccessLink(group.access_link || '');
+    setEditParticipationPrice(String(group.participation_price ?? (group as any).entryFee ?? '10.00'));
+    setEditPrize(String(group.prize || (group as any).prizeValue || ''));
+    setEditMaxParticipations(String(group.max_participations ?? (group as any).maxParticipants ?? '0'));
+    setEditImageUrl(group.image_url || '');
+  };
+
+  // Submit Update Group Handler
+  const handleUpdateGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGroup) return;
+
+    setEditSubmitting(true);
+    try {
+      const parsedPrice = parseFloat(editParticipationPrice.replace(',', '.')) || 0;
+      const parsedMax = parseInt(editMaxParticipations, 10) || 0;
+
+      const updatedData: any = {
+        name: editName.trim(),
+        title: editName.trim(),
+        description: editDescription.trim(),
+        type: editType,
+        access_link: editAccessLink.trim(),
+        participation_price: parsedPrice,
+        entryFee: parsedPrice,
+        prize: editPrize.trim(),
+        prizeValue: editPrize.trim(),
+        max_participations: parsedMax,
+        maxParticipants: parsedMax,
+        image_url: editImageUrl.trim(),
+        updated_at: new Date().toISOString()
+      };
+
+      await updateDoc(doc(db, 'pix_groups', editingGroup.id), updatedData);
+
+      // If selectedGroup is this group, update selectedGroup as well
+      if (selectedGroup?.id === editingGroup.id) {
+        setSelectedGroup(prev => prev ? ({ ...prev, ...updatedData }) : null);
+      }
+
+      alert("Grupo Pix atualizado com sucesso!");
+      setEditingGroup(null);
+    } catch (err: any) {
+      console.error("Erro ao atualizar grupo Pix:", err);
+      alert(`Erro ao atualizar grupo: ${err.message || 'Erro desconhecido'}`);
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
@@ -996,70 +1067,117 @@ export const GrupoPixAdmin: React.FC = () => {
                     const isDrawn = group.status === 'drawn';
 
                     return (
-                      <div key={group.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4 flex flex-col justify-between hover:border-emerald-300 transition-all">
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-start">
-                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-white flex items-center gap-1 ${
-                              isTelegram ? 'bg-sky-500' : 'bg-emerald-600'
+                      <div key={group.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between hover:border-emerald-300 transition-all">
+                        {/* Cover Image Banner */}
+                        <div className="relative w-full h-36 bg-slate-900 overflow-hidden">
+                          {group.image_url ? (
+                            <img
+                              src={group.image_url}
+                              alt={groupName}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className={`w-full h-full flex flex-col items-center justify-center text-white ${
+                              isTelegram ? 'bg-gradient-to-br from-sky-600 to-blue-800' : 'bg-gradient-to-br from-emerald-600 to-teal-800'
+                            }`}>
+                              {isTelegram ? <Send className="w-10 h-10 opacity-70" /> : <MessageCircle className="w-10 h-10 opacity-70" />}
+                              <span className="text-[10px] font-bold uppercase tracking-wider mt-1 opacity-70">
+                                {isTelegram ? 'Telegram' : 'WhatsApp'}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
+
+                          <div className="absolute top-2.5 left-2.5 flex gap-1.5">
+                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-white flex items-center gap-1 shadow-sm ${
+                              isTelegram ? 'bg-sky-600' : 'bg-emerald-600'
                             }`}>
                               {isTelegram ? <Send className="w-3 h-3" /> : <MessageCircle className="w-3 h-3" />}
                               {isTelegram ? 'Telegram' : 'WhatsApp'}
                             </span>
-                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                              isDrawn ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
+                          </div>
+
+                          <div className="absolute top-2.5 right-2.5">
+                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm ${
+                              isDrawn ? 'bg-purple-600 text-white' : 'bg-white/95 text-emerald-800 backdrop-blur-sm'
                             }`}>
                               {isDrawn ? 'Sorteado' : 'Ativo'}
                             </span>
                           </div>
 
-                          <div>
-                            <h3 className="text-base font-black text-slate-900 leading-snug">{groupName}</h3>
-                            <p className="text-xs text-slate-500 line-clamp-2 mt-1">{group.description || "Sem descrição."}</p>
+                          <div className="absolute bottom-2 left-2.5 right-2.5 flex justify-between text-white/90 text-[11px]">
+                            <span className="font-mono font-bold bg-black/40 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                              #{group.id.slice(-6).toUpperCase()}
+                            </span>
+                            {maxParticipants > 0 && (
+                              <span className="font-bold bg-black/40 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                                {currentParticipants}/{maxParticipants} vagas
+                              </span>
+                            )}
                           </div>
-
-                          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 text-xs">
-                            <div className="flex justify-between font-medium">
-                              <span className="text-slate-500">Valor de Entrada:</span>
-                              <span className="font-bold text-slate-900">R$ {Number(price).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between font-medium">
-                              <span className="text-slate-500">Prêmio:</span>
-                              <span className="font-bold text-emerald-700">{group.prize || (group as any).prizeValue || 'PIX'}</span>
-                            </div>
-                            <div className="flex justify-between font-medium">
-                              <span className="text-slate-500">Participantes Confirmados:</span>
-                              <span className="font-bold text-slate-900">{currentParticipants} {maxParticipants > 0 ? `/ ${maxParticipants}` : ''}</span>
-                            </div>
-                          </div>
-
-                          {isDrawn && (group as any).winnerName && (
-                            <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 text-xs text-purple-900 space-y-0.5">
-                              <p className="font-black flex items-center gap-1">
-                                <Trophy className="w-3.5 h-3.5 text-purple-600" />
-                                Ganhador: {(group as any).winnerName}
-                              </p>
-                              <p className="font-mono text-[11px] text-purple-700">
-                                Código: {(group as any).winnerParticipationCode || (group as any).winner_code}
-                              </p>
-                            </div>
-                          )}
                         </div>
 
-                        <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
-                          <button
-                            onClick={() => setSelectedGroup(group)}
-                            className="flex-1 py-2.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl transition-all text-center"
-                          >
-                            Abrir Dashboard & Participantes
-                          </button>
+                        <div className="p-5 space-y-3 flex-1 flex flex-col justify-between">
+                          <div className="space-y-3">
+                            <div>
+                              <h3 className="text-base font-black text-slate-900 leading-snug">{groupName}</h3>
+                              <p className="text-xs text-slate-500 line-clamp-2 mt-1">{group.description || "Sem descrição."}</p>
+                            </div>
 
-                          <button
-                            onClick={() => handleDeleteGroup(group.id)}
-                            className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                            title="Excluir Grupo"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1.5 text-xs">
+                              <div className="flex justify-between font-medium">
+                                <span className="text-slate-500">Valor de Entrada:</span>
+                                <span className="font-bold text-slate-900">R$ {Number(price).toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between font-medium">
+                                <span className="text-slate-500">Prêmio:</span>
+                                <span className="font-bold text-emerald-700">{group.prize || (group as any).prizeValue || 'PIX'}</span>
+                              </div>
+                              <div className="flex justify-between font-medium">
+                                <span className="text-slate-500">Participantes Confirmados:</span>
+                                <span className="font-bold text-slate-900">{currentParticipants} {maxParticipants > 0 ? `/ ${maxParticipants}` : ''}</span>
+                              </div>
+                            </div>
+
+                            {isDrawn && (group as any).winnerName && (
+                              <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 text-xs text-purple-900 space-y-0.5">
+                                <p className="font-black flex items-center gap-1">
+                                  <Trophy className="w-3.5 h-3.5 text-purple-600" />
+                                  Ganhador: {(group as any).winnerName}
+                                </p>
+                                <p className="font-mono text-[11px] text-purple-700">
+                                  Código: {(group as any).winnerParticipationCode || (group as any).winner_code}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-100 flex items-center gap-2 mt-3">
+                            <button
+                              onClick={() => setSelectedGroup(group)}
+                              className="flex-1 py-2.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl transition-all text-center cursor-pointer"
+                            >
+                              Dashboard & Gestão
+                            </button>
+
+                            <button
+                              onClick={() => handleOpenEditGroup(group)}
+                              className="p-2.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
+                              title="Editar Grupo"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteGroup(group.id)}
+                              className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                              title="Excluir Grupo"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1694,6 +1812,20 @@ export const GrupoPixAdmin: React.FC = () => {
                     onChange={(e) => setImageUrl(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
+                  {imageUrl && (
+                    <div className="mt-2 relative h-28 w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-900 shadow-inner">
+                      <img 
+                        src={imageUrl} 
+                        alt="Prévia da capa" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => (e.currentTarget.style.display = 'none')} 
+                        referrerPolicy="no-referrer" 
+                      />
+                      <span className="absolute bottom-1.5 right-2 text-[10px] font-bold bg-black/70 text-white px-2 py-0.5 rounded backdrop-blur-sm">
+                        Prévia da Imagem de Capa
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1711,10 +1843,188 @@ export const GrupoPixAdmin: React.FC = () => {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50"
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50 cursor-pointer"
               >
                 {submitting ? 'Salvando...' : 'Criar Grupo Pix'}
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição de Grupo Pix */}
+      {editingGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto border border-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Editar Grupo Pix</h3>
+                  <p className="text-xs text-slate-500 font-medium">Atualize os detalhes, imagem ou link do grupo.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingGroup(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateGroup} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Nome do Grupo</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Grupo VIP Pix R$ 1.000"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tipo de Grupo</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditType('whatsapp')}
+                    className={`py-2.5 px-4 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      editType === 'whatsapp'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+                        : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-600" />
+                    WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditType('telegram')}
+                    className={`py-2.5 px-4 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      editType === 'telegram'
+                        ? 'bg-sky-50 border-sky-500 text-sky-800'
+                        : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <Send className="w-4 h-4 text-sky-500" />
+                    Telegram
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Link de Acesso (Privado - Liberado apenas após pagamento)
+                </label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://chat.whatsapp.com/... ou https://t.me/..."
+                  value={editAccessLink}
+                  onChange={(e) => setEditAccessLink(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Valor da Entrada (R$)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="10.00"
+                    value={editParticipationPrice}
+                    onChange={(e) => setEditParticipationPrice(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Prêmio a Concorrer</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: R$ 500,00 no PIX"
+                    value={editPrize}
+                    onChange={(e) => setEditPrize(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Limite de Vagas (0 = Ilimitado)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={editMaxParticipations}
+                    onChange={(e) => setEditMaxParticipations(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">URL da Imagem de Capa (Opcional)</label>
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    value={editImageUrl}
+                    onChange={(e) => setEditImageUrl(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Live Preview for Edit */}
+              {editImageUrl && (
+                <div className="relative h-28 w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-900 shadow-inner">
+                  <img 
+                    src={editImageUrl} 
+                    alt="Prévia da capa" 
+                    className="w-full h-full object-cover" 
+                    onError={(e) => (e.currentTarget.style.display = 'none')} 
+                    referrerPolicy="no-referrer" 
+                  />
+                  <span className="absolute bottom-1.5 right-2 text-[10px] font-bold bg-black/70 text-white px-2 py-0.5 rounded backdrop-blur-sm">
+                    Prévia da Imagem de Capa
+                  </span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Descrição</label>
+                <textarea
+                  rows={2}
+                  placeholder="Informações adicionais para os participantes..."
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingGroup(null)}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-xl transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSubmitting}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {editSubmitting ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
             </form>
           </div>
         </div>
